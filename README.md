@@ -13,27 +13,14 @@ gemini3
 
 deepseek
 
-MyauPlus
-A Forge hack mod based on Openmyau-0910.
+-----------------------------------------
 
-Integrated contents include:
+如何构建？
 
-ravenbs+
+1.打开你的idea
 
-NightSky
+2.打开此项目
 
-Powered by:
+3.将你的大象（gradle）设置为jdk17
 
-gemini3
-
-deepseek
-
-Important Note
-If you are not living in Mainland China, please update the Gradle configuration file as follows:
-
-Locate the file in your project: gradle/wrapper/gradle-wrapper.properties
-
-Modify the distributionUrl property to:
-
-properties
-distributionUrl=https\://services.gradle.org/distributions/gradle-7.6-bin.zip
+4.运行gradle build
