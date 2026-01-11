@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Myau",
+    "version": "${version}",
+    "mcversion": "1.8.9",
+    "authorList": [
+      "ksyz",
+      "returnQwQ",
+      "Luguan"
+    ]
+  }
+]
