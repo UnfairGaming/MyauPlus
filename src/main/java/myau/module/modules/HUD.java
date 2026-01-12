@@ -4,14 +4,13 @@ import myau.Myau;
 import myau.enums.BlinkModules;
 import myau.enums.ChatColors;
 import myau.event.EventTarget;
-import myau.event.types.EventType;
 import myau.events.Render2DEvent;
 import myau.events.TickEvent;
 import myau.mixin.IAccessorGuiChat;
 import myau.module.Category;
 import myau.module.Module;
 import myau.property.properties.*;
-import myau.util.AnimationUtil; // 确保导入了 AnimationUtil
+import myau.util.AnimationUtil;
 import myau.util.ColorUtil;
 import myau.util.RenderUtil;
 import myau.util.font.FontManager;
@@ -23,7 +22,6 @@ import net.minecraft.client.renderer.GlStateManager;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.*;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -34,19 +32,15 @@ import java.util.stream.Collectors;
 public class HUD extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
 
-    // --- 动画状态存储 ---
     private final Map<Module, Float> animationMap = new HashMap<>();
 
-    // --- 新增：字体选择属性 ---
     public final ModeProperty fontMode = new ModeProperty("font", 1, new String[]{"MINECRAFT", "PRODUCT_SANS", "REGULAR", "TENACITY", "VISION", "NBP_INFORMA", "TAHOMA_BOLD"});
-
-    // --- 新增：动画属性 ---
     public final ModeProperty animationMode = new ModeProperty("animation", 1, new String[]{"NONE", "SLIDE", "SCALE", "FADE", "ZIPPER"});
-    public final FloatProperty animationSpeed = new FloatProperty("anim-speed", 1.0F, 0.1F, 10.0F);
 
-    public final ModeProperty colorMode = new ModeProperty(
-            "color", 3, new String[]{"RAINBOW", "CHROMA", "ASTOLFO", "CUSTOM1", "CUSTOM12", "CUSTOM123"}
-    );
+    // 速度建议范围调整：0.5 - 5.0，默认 2.0 比较舒服
+    public final FloatProperty animationSpeed = new FloatProperty("anim-speed", 2.0F, 0.1F, 10.0F);
+
+    public final ModeProperty colorMode = new ModeProperty("color", 3, new String[]{"RAINBOW", "CHROMA", "ASTOLFO", "CUSTOM1", "CUSTOM12", "CUSTOM123"});
     public final FloatProperty colorSpeed = new FloatProperty("color-speed", 1.0F, 0.5F, 1.5F);
     public final PercentProperty colorSaturation = new PercentProperty("color-saturation", 50);
     public final PercentProperty colorBrightness = new PercentProperty("color-brightness", 100);
@@ -71,6 +65,7 @@ public class HUD extends Module {
         super("HUD", "Heads-up display.", Category.RENDER, 0, true, true);
     }
 
+    // ... (保留原有的 Font 相关辅助方法: getCustomFont, getFontHeight, getStringWidth, drawString) ...
     // --- 字体辅助方法 Start ---
     private FontRenderer getCustomFont() {
         switch (fontMode.getValue()) {
@@ -108,6 +103,7 @@ public class HUD extends Module {
     }
     // --- 字体辅助方法 End ---
 
+    // ... (保留 getModuleName, getModuleSuffix, getModuleWidth, calculateStringWidth, getColorCycle, getColor) ...
     private String getModuleName(Module module) {
         String moduleName = module.getName();
         if (this.lowerCase.getValue()) moduleName = moduleName.toLowerCase(Locale.ROOT);
@@ -169,15 +165,14 @@ public class HUD extends Module {
         return Color.getHSBColor(hsb[0], hsb[1] * (this.colorSaturation.getValue().floatValue() / 100.0F), hsb[2] * (this.colorBrightness.getValue().floatValue() / 100.0F));
     }
 
-    // 移除 onTick 中的列表排序逻辑，将其移动到 Render2D 以保持动画流畅
+
     @EventTarget
     public void onTick(TickEvent event) {
-        // 空方法，保留以防未来需要
     }
 
     @EventTarget
     public void onRender2D(Render2DEvent event) {
-        // --- 聊天框描边逻辑 ---
+        // --- 聊天框描边逻辑 (保留) ---
         if (this.chatOutline.getValue() && mc.currentScreen instanceof GuiChat) {
             String text = ((IAccessorGuiChat) mc.currentScreen).getInputField().getText().trim();
             if (Myau.commandManager != null && Myau.commandManager.isTypingCommand(text)) {
@@ -191,29 +186,32 @@ public class HUD extends Module {
             float fontHeight = getFontHeight() - 1.0F;
             if (getCustomFont() != null) fontHeight += 2.0F;
 
-            // --- 核心动画状态更新逻辑 ---
-            // 遍历所有模块，更新动画值
+            // --- 核心修复：计算真实 Frame Time (秒) ---
+            // 防止 FPS 过低导致除零或极大值，限制最小 5 FPS
+            float deltaTime = 1.0f / Math.max(Minecraft.getDebugFPS(), 5);
+
             for (Module module : Myau.moduleManager.modules.values()) {
-                // 目标值：开启且未隐藏为 1，否则为 0
                 float target = module.isEnabled() && !module.isHidden() ? 1.0F : 0.0F;
                 float current = animationMap.getOrDefault(module, 0.0F);
 
-                // 使用 AnimationUtil 进行平滑过渡
-                current = AnimationUtil.animate(target, current, this.animationSpeed.getValue() * 0.05F);
+                // --- 核心修复：使用新的 animateSmooth 算法 ---
+                // 乘数调整：将 property (0.1-10) 放大倍数，以便 slider 手感更好
+                // 乘以 6.0f 是为了让 1.0 的默认值产生一个适中的速度 (约 100-200ms 完成动画)
+                float speed = this.animationSpeed.getValue() * 6.0f;
 
-                // 限制范围防止溢出
-                if (Math.abs(current - target) < 0.01F) current = target;
+                current = AnimationUtil.animateSmooth(target, current, speed, deltaTime);
+
+                // 阈值清除，防止浮点数残留
+                if (Math.abs(current - target) < 0.005F) current = target;
 
                 animationMap.put(module, current);
             }
 
-            // 获取需要渲染的模块列表（动画值 > 0 的模块）
             List<Module> renderList = Myau.moduleManager.modules.values().stream()
-                    .filter(m -> animationMap.getOrDefault(m, 0.0F) > 0.01F)
+                    .filter(m -> animationMap.getOrDefault(m, 0.0F) > 0.005F) // 阈值
                     .sorted(Comparator.comparingInt(this::getModuleWidth).reversed())
                     .collect(Collectors.toList());
 
-            // --- 渲染计算 ---
             float startX = (float) this.offsetX.getValue() + (1.0F + (this.showBar.getValue() ? (this.shadow.getValue() ? 2.0F : 1.0F) : 0.0F)) * this.scale.getValue();
             float startY = (float) this.offsetY.getValue() + 1.0F * this.scale.getValue();
 
@@ -227,55 +225,44 @@ public class HUD extends Module {
             long offset = 0L;
             float currentY = startY;
 
-            // --- 渲染循环 ---
             for (Module module : renderList) {
                 float animValue = animationMap.getOrDefault(module, 0.0F);
-                if (animValue <= 0.01F) continue; // 双重检查
+                if (animValue <= 0.005F) continue;
 
                 String moduleName = this.getModuleName(module);
                 String[] moduleSuffix = this.getModuleSuffix(module);
                 float totalWidth = (float) (this.calculateStringWidth(moduleName, moduleSuffix) - (this.shadow.getValue() ? 0 : 1));
-
-                // 动态高度（用于 Zipper 动画）
                 float itemHeight = (fontHeight + (this.shadow.getValue() ? 1.0F : 0.0F)) * this.scale.getValue();
-
-                // 获取颜色
                 int color = this.getColor(l, offset).getRGB();
 
-                // 应用透明度（Fade 动画）
-                if (this.animationMode.getValue() == 3) { // FADE
+                // Fade 动画处理
+                if (this.animationMode.getValue() == 3) {
                     color = ColorUtil.applyOpacity(color, animValue);
                 }
 
                 GlStateManager.pushMatrix();
 
-                // --- 动画变换应用区域 ---
-                float xPos = currentY / this.scale.getValue(); // 这里只是个临时变量名，实际是Y轴逻辑
                 float realX = startX / this.scale.getValue();
                 float realY = currentY / this.scale.getValue();
 
+                // --- 动画变换逻辑 ---
                 switch (this.animationMode.getValue()) {
-                    case 1: // SLIDE (从侧边滑入)
+                    case 1: // SLIDE
                         float slideDist = (totalWidth + 10) * (1.0F - animValue);
-                        if (this.posX.getValue() == 1) { // Right
-                            GlStateManager.translate(slideDist, 0, 0);
-                        } else { // Left
-                            GlStateManager.translate(-slideDist, 0, 0);
-                        }
+                        if (this.posX.getValue() == 1) GlStateManager.translate(slideDist, 0, 0); // Right
+                        else GlStateManager.translate(-slideDist, 0, 0); // Left
                         break;
-                    case 2: // SCALE (缩放弹出)
-                        // 计算中心点以实现中心缩放效果
+                    case 2: // SCALE
                         float centerX = realX + (this.posX.getValue() == 1 ? -totalWidth / 2 : totalWidth / 2);
                         float centerY = realY + fontHeight / 2;
-
                         GlStateManager.translate(centerX, centerY, 0);
                         GlStateManager.scale(animValue, animValue, 1.0F);
                         GlStateManager.translate(-centerX, -centerY, 0);
                         break;
-                    case 3: // FADE (透明度) - 已在上面处理颜色
-                        // 无额外GL变换
+                    case 3: // FADE
                         break;
-                    case 4: // ZIPPER (垂直挤压/展开)
+                    case 4: // ZIPPER
+                        // 根据 animValue 调整 Y 轴间距的视觉效果，实际位移在 loop 底部 currentY += ...
                         GlStateManager.translate(0, (itemHeight * (1.0F - animValue)) * (this.posY.getValue() == 1 ? -0.5 : 0.5), 0);
                         GlStateManager.scale(1.0F, animValue, 1.0F);
                         break;
@@ -283,7 +270,7 @@ public class HUD extends Module {
 
                 RenderUtil.enableRenderState();
 
-                // 背景
+                // 背景绘制
                 if (this.background.getValue() > 0) {
                     int bgColor = new Color(0.0F, 0.0F, 0.0F, this.background.getValue().floatValue() / 100.0F).getRGB();
                     if (this.animationMode.getValue() == 3) bgColor = ColorUtil.applyOpacity(bgColor, animValue);
@@ -297,7 +284,7 @@ public class HUD extends Module {
                     );
                 }
 
-                // 侧边条
+                // 侧边条绘制
                 if (this.showBar.getValue()) {
                     float barTop = realY - (this.posY.getValue() == 0 ? (offset == 0L ? 1.0F : 0.0F) : 0.0F);
                     float barBottom = realY + fontHeight + (this.posY.getValue() == 0 ? 0.0F : (offset == 0L ? 1.0F : 0.0F));
@@ -314,7 +301,7 @@ public class HUD extends Module {
                 RenderUtil.disableRenderState();
                 GlStateManager.disableDepth();
 
-                // 文字
+                // 文字绘制
                 float textX = realX - (this.posX.getValue() == 1 ? totalWidth : 0.0F);
                 float textY = realY + (this.posY.getValue() == 1 ? 1.0F : 0.0F);
 
@@ -331,16 +318,22 @@ public class HUD extends Module {
                     }
                 }
 
-                GlStateManager.popMatrix(); // 结束当前模块的变换
+                GlStateManager.popMatrix();
 
-                // 更新 Y 轴位置 (根据动画值动态调整间距，实现 Zipper 效果，或者平滑移动)
-                float offsetHeight = itemHeight * (this.animationMode.getValue() == 4 ? animValue : 1.0F);
-                currentY += offsetHeight * (this.posY.getValue() == 0 ? 1.0F : -1.0F);
+                // 更新 Y 轴累加值
+                // 如果是 Zipper 模式，根据 animValue 动态改变高度，否则全高
+                float heightMultiplier = (this.animationMode.getValue() == 4) ? animValue : 1.0f;
+
+                // 注意：如果不是 Zipper 模式，也应该加上间距。
+                // 你的逻辑中 animationMode 0=NONE, 1=SLIDE, 2=SCALE, 3=FADE, 4=ZIPPER
+                // Slide/Scale/Fade 模式下，高度应该是全高，只有 Zipper 会压缩高度
+
+                currentY += itemHeight * heightMultiplier * (this.posY.getValue() == 0 ? 1.0F : -1.0F);
 
                 offset++;
             }
 
-            // Blink Timer 渲染 (保持原样)
+            // Blink Timer (保留)
             if (this.blinkTimer.getValue()) {
                 BlinkModules blinkingModule = Myau.blinkManager.getBlinkingModule();
                 if (blinkingModule != BlinkModules.NONE && blinkingModule != BlinkModules.AUTO_BLOCK) {
@@ -348,12 +341,9 @@ public class HUD extends Module {
                     if (movementPacketSize > 0L) {
                         GlStateManager.enableBlend();
                         GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
                         String blinkText = String.valueOf(movementPacketSize);
-                        float blinkX = (float) new ScaledResolution(mc).getScaledWidth() / 2.0F / this.scale.getValue()
-                                - getStringWidth(blinkText) / 2.0F;
+                        float blinkX = (float) new ScaledResolution(mc).getScaledWidth() / 2.0F / this.scale.getValue() - getStringWidth(blinkText) / 2.0F;
                         float blinkY = (float) new ScaledResolution(mc).getScaledHeight() / 5.0F * 3.0F / this.scale.getValue();
-
                         this.drawString(blinkText, blinkX, blinkY, this.getColor(l, offset).getRGB() & 16777215 | -1090519040, this.shadow.getValue());
                         GlStateManager.disableBlend();
                     }

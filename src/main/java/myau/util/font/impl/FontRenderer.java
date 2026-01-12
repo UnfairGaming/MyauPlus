@@ -11,8 +11,6 @@ import org.jetbrains.annotations.NotNull;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * @author TejasLamba2006
@@ -107,20 +105,11 @@ public class FontRenderer extends CharRenderer implements IFont {
 
                 if (colorIndex < 16) {
                     GlStateManager.bindTexture(this.tex.getGlTextureId());
-                    currentData = this.charData;
 
-                    if (colorIndex < 0) {
-                        colorIndex = 15;
-                    }
-
-                    if (shadow) {
-                        colorIndex += 16;
-                    }
                     GlStateManager.color(red, green, blue, (float) alpha);
                 } else {
                     GlStateManager.color(red, green, blue, (float) alpha);
                     GlStateManager.bindTexture(this.tex.getGlTextureId());
-                    currentData = this.charData;
                 }
 
                 ++index;
@@ -213,33 +202,6 @@ public class FontRenderer extends CharRenderer implements IFont {
         this.texBold = this.setupTexture(this.font.deriveFont(Font.BOLD), this.antiAlias, this.fractionalMetrics, this.boldChars);
         this.texItalic = this.setupTexture(this.font.deriveFont(Font.ITALIC), this.antiAlias, this.fractionalMetrics, this.italicChars);
         this.texItalicBold = this.setupTexture(this.font.deriveFont(Font.BOLD | Font.ITALIC), this.antiAlias, this.fractionalMetrics, this.boldItalicChars);
-    }
-
-    public void wrapText(String text, double x, double y, CenterMode centerMode, boolean shadow, int color, double width) {
-        List<String> lines = new ArrayList<>();
-        String[] words = text.trim().split(" ");
-        StringBuilder line = new StringBuilder();
-
-        for (String word : words) {
-            double totalWidth = getStringWidth(line + " " + word);
-
-            if (x + totalWidth >= x + width) {
-                lines.add(line.toString());
-                line = new StringBuilder(word).append(" ");
-                continue;
-            }
-
-            line.append(word).append(" ");
-        }
-        lines.add(line.toString());
-
-        double newY = y - (centerMode == CenterMode.XY || centerMode == CenterMode.Y ? ((lines.size() - 1) * (getHeight() + 5)) / 2 : 0);
-        // add x centermode support never !!!!
-        for (String s : lines) {
-            GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-            drawString(s, x, newY, centerMode, shadow, color);
-            newY += getHeight() + 5;
-        }
     }
 
     private void setupMinecraftColorcodes() {

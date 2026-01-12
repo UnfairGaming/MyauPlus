@@ -10,13 +10,14 @@ import myau.module.ModuleManager;
 import myau.module.modules.*;
 import myau.property.Property;
 import myau.property.PropertyManager;
+import myau.ui.impl.notification.NotificationRenderer;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 
 public class Myau {
     public static String clientName = "§c[§6M§ey§aa§bu§9P§dl§cu§6s§c] ";
-    public static String clientVersion = "1.2";
+    public static String clientVersion = "1.3-1";
     public static RotationManager rotationManager;
     public static FloatManager floatManager;
     public static BlinkManager blinkManager;
@@ -29,6 +30,7 @@ public class Myau {
     public static ModuleManager moduleManager;
     public static CommandManager commandManager;
     public static Config globalConfig;
+    public static final NotificationRenderer notificationRenderer = new NotificationRenderer();
 
     public Myau() {
         this.init();
@@ -53,6 +55,7 @@ public class Myau {
         EventManager.register(lagManager);
         EventManager.register(moduleManager);
         EventManager.register(commandManager);
+        EventManager.register(notificationRenderer);
         moduleManager.modules.put(AimAssist.class, new AimAssist());
         moduleManager.modules.put(Animations.class, new Animations());
         moduleManager.modules.put(AntiDebuff.class, new AntiDebuff());
@@ -94,6 +97,7 @@ public class Myau {
         moduleManager.modules.put(NoFall.class, new NoFall());
         moduleManager.modules.put(NoHitDelay.class, new NoHitDelay());
         moduleManager.modules.put(NoHurtCam.class, new NoHurtCam());
+        moduleManager.modules.put(NotificationModule.class, new NotificationModule());
         moduleManager.modules.put(NoJumpDelay.class, new NoJumpDelay());
         moduleManager.modules.put(NoRotate.class, new NoRotate());
         moduleManager.modules.put(NoSlow.class, new NoSlow());

@@ -65,7 +65,7 @@ public abstract class MixinGuiMainMenu extends GuiScreen {
     @Inject(method = "drawScreen", at = @At("HEAD"), cancellable = true)
     public void onDrawScreen(int mouseX, int mouseY, float partialTicks, CallbackInfo ci) {
         BackgroundRenderer.draw(this.width, this.height, mouseX, mouseY);
-        animProgress = AnimationUtil.animate(1.0f, animProgress, 0.14f);
+        animProgress = AnimationUtil.animate(1.0f, animProgress, 0.14f, 1.0f);
 
         // --- 修正后的标题位置 ---
         // centerY - 95

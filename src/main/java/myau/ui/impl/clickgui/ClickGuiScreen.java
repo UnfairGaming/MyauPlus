@@ -5,7 +5,6 @@ import myau.module.Category;
 import myau.module.Module;
 import myau.module.modules.ClickGUIModule;
 import myau.ui.impl.clickgui.component.SearchBar;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.settings.KeyBinding;
@@ -17,7 +16,7 @@ import java.util.ArrayList;
 
 public class ClickGuiScreen extends GuiScreen {
     private static ClickGuiScreen instance;
-    private ArrayList<Frame> frames;
+    private final ArrayList<Frame> frames;
     private Frame draggingComponent = null;
 
     private int scrollY = 0;
@@ -33,7 +32,7 @@ public class ClickGuiScreen extends GuiScreen {
     private static final long STAGGER_DELAY = 40L;
 
     // Search Bar
-    private SearchBar searchBar;
+    private final SearchBar searchBar;
     private String searchQuery = "";
 
     public ClickGuiScreen() {
@@ -95,7 +94,6 @@ public class ClickGuiScreen extends GuiScreen {
         }
 
         long elapsedTime = System.currentTimeMillis() - openTime;
-        long totalAnimationTime = (frames.size() * STAGGER_DELAY) + ANIMATION_DURATION;
 
         if (isClosing && elapsedTime > ANIMATION_DURATION) {
             mc.displayGuiScreen(null);
@@ -205,7 +203,7 @@ public class ClickGuiScreen extends GuiScreen {
         if (isClosing) return;
         super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
         if (draggingComponent != null) {
-            draggingComponent.updatePosition(mouseX, mouseY, scrollY);
+            draggingComponent.updatePosition(mouseX, mouseY);
         }
     }
 

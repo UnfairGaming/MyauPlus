@@ -4,6 +4,8 @@ import myau.event.EventTarget;
 import myau.event.types.EventType;
 import myau.events.KeyEvent;
 import myau.events.TickEvent;
+import myau.module.modules.NotificationModule;
+import myau.ui.impl.notification.NotificationRenderer;
 import myau.util.SoundUtil;
 
 import java.util.ArrayList;
@@ -27,7 +29,21 @@ public class ModuleManager {
             if (module.getKey() != event.getKey()) {
                 continue;
             }
+            boolean wasEnabled = module.isEnabled();
             module.toggle();
+
+            // 发送模块切换通知
+            NotificationModule notifModule = (NotificationModule) modules.get(NotificationModule.class);
+            if (notifModule != null && notifModule.isEnabled() && notifModule.moduleToggle.getValue()) {
+                // 排除Notification模块自身的切换通知
+                if (!(module instanceof NotificationModule)) {
+                    if (module.isEnabled()) {
+                        NotificationRenderer.success(module.getName() + " Enabled", "Module has been turned on");
+                    } else {
+                        NotificationRenderer.warning(module.getName() + " Disabled", "Module has been turned off");
+                    }
+                }
+            }
         }
     }
 

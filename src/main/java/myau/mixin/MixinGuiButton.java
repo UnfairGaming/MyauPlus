@@ -52,7 +52,7 @@ public abstract class MixinGuiButton {
 
             // 2. 更新动画 (如果按钮被禁用，强制动画进度为0)
             float target = (this.hovered && this.enabled) ? 1.0f : 0.0f;
-            this.hoverProgress = AnimationUtil.animate(target, this.hoverProgress, 0.2f);
+            this.hoverProgress = AnimationUtil.animate(target, this.hoverProgress, 0.2f, 1.0f);
 
             // 3. 准备绘制环境
             GlStateManager.enableBlend();

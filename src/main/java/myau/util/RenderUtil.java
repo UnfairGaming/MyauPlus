@@ -75,6 +75,152 @@ public class RenderUtil {
         return ChatColors.GRAY;
     }
 
+    // 添加以下方法到RenderUtil类中
+
+    /**
+     * 绘制圆形（填充）
+     */
+    public static void drawCircle(float x, float y, float radius, int color) {
+        enableRenderState();
+        setColor(color);
+
+        GL11.glEnable(GL11.GL_POLYGON_SMOOTH);
+        GL11.glHint(GL11.GL_POLYGON_SMOOTH_HINT, GL11.GL_NICEST);
+
+        GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+        GL11.glVertex2f(x, y);
+        for (int i = 0; i <= 360; i++) {
+            double angle = Math.toRadians(i);
+            GL11.glVertex2f(x + (float)(Math.cos(angle) * radius), y + (float)(Math.sin(angle) * radius));
+        }
+        GL11.glEnd();
+
+        GL11.glDisable(GL11.GL_POLYGON_SMOOTH);
+        disableRenderState();
+    }
+
+    /**
+     * 绘制渐变圆形
+     */
+    public static void drawGradientCircle(float x, float y, float radius, int startColor, int endColor) {
+        enableRenderState();
+        GL11.glShadeModel(GL11.GL_SMOOTH);
+
+        float startA = (float)(startColor >> 24 & 255) / 255.0F;
+        float startR = (float)(startColor >> 16 & 255) / 255.0F;
+        float startG = (float)(startColor >> 8 & 255) / 255.0F;
+        float startB = (float)(startColor & 255) / 255.0F;
+
+        float endA = (float)(endColor >> 24 & 255) / 255.0F;
+        float endR = (float)(endColor >> 16 & 255) / 255.0F;
+        float endG = (float)(endColor >> 8 & 255) / 255.0F;
+        float endB = (float)(endColor & 255) / 255.0F;
+
+        GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+        GlStateManager.color(startR, startG, startB, startA);
+        GL11.glVertex2f(x, y);
+
+        for (int i = 0; i <= 360; i++) {
+            double angle = Math.toRadians(i);
+            float currentX = x + (float)(Math.cos(angle) * radius);
+            float currentY = y + (float)(Math.sin(angle) * radius);
+
+            // 根据角度插值颜色
+            float t = (float)i / 360.0f;
+            float r = startR + (endR - startR) * t;
+            float g = startG + (endG - startG) * t;
+            float b = startB + (endB - startB) * t;
+            float a = startA + (endA - startA) * t;
+
+            GlStateManager.color(r, g, b, a);
+            GL11.glVertex2f(currentX, currentY);
+        }
+        GL11.glEnd();
+
+        GL11.glShadeModel(GL11.GL_FLAT);
+        disableRenderState();
+    }
+
+    /**
+     * 绘制带边框的圆形
+     */
+    public static void drawCircleOutline(float x, float y, float radius, float lineWidth, int color) {
+        enableRenderState();
+        setColor(color);
+        GL11.glLineWidth(lineWidth);
+        GL11.glEnable(GL11.GL_LINE_SMOOTH);
+        GL11.glHint(GL11.GL_LINE_SMOOTH_HINT, GL11.GL_NICEST);
+
+        GL11.glBegin(GL11.GL_LINE_LOOP);
+        for (int i = 0; i <= 360; i++) {
+            double angle = Math.toRadians(i);
+            GL11.glVertex2f(x + (float)(Math.cos(angle) * radius), y + (float)(Math.sin(angle) * radius));
+        }
+        GL11.glEnd();
+
+        GL11.glDisable(GL11.GL_LINE_SMOOTH);
+        GL11.glLineWidth(1.0f);
+        disableRenderState();
+    }
+
+    /**
+     * 绘制图片（简化版）
+     */
+    public static void drawImage(ResourceLocation resource, float x, float y, float width, float height) {
+        try {
+            mc.getTextureManager().bindTexture(resource);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(0, 0);
+            GL11.glVertex2f(x, y);
+            GL11.glTexCoord2f(1, 0);
+            GL11.glVertex2f(x + width, y);
+            GL11.glTexCoord2f(1, 1);
+            GL11.glVertex2f(x + width, y + height);
+            GL11.glTexCoord2f(0, 1);
+            GL11.glVertex2f(x, y + height);
+            GL11.glEnd();
+
+            GL11.glDisable(GL11.GL_BLEND);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 绘制渐变矩形
+     */
+    public static void drawGradientRect(float x, float y, float width, float height, int startColor, int endColor) {
+        enableRenderState();
+        GL11.glShadeModel(GL11.GL_SMOOTH);
+
+        float startA = (float)(startColor >> 24 & 255) / 255.0F;
+        float startR = (float)(startColor >> 16 & 255) / 255.0F;
+        float startG = (float)(startColor >> 8 & 255) / 255.0F;
+        float startB = (float)(startColor & 255) / 255.0F;
+
+        float endA = (float)(endColor >> 24 & 255) / 255.0F;
+        float endR = (float)(endColor >> 16 & 255) / 255.0F;
+        float endG = (float)(endColor >> 8 & 255) / 255.0F;
+        float endB = (float)(endColor & 255) / 255.0F;
+
+        Tessellator tessellator = Tessellator.getInstance();
+        WorldRenderer worldrenderer = tessellator.getWorldRenderer();
+
+        worldrenderer.begin(7, DefaultVertexFormats.POSITION_COLOR);
+        worldrenderer.pos(x + width, y, 0.0D).color(startR, startG, startB, startA).endVertex();
+        worldrenderer.pos(x, y, 0.0D).color(startR, startG, startB, startA).endVertex();
+        worldrenderer.pos(x, y + height, 0.0D).color(endR, endG, endB, endA).endVertex();
+        worldrenderer.pos(x + width, y + height, 0.0D).color(endR, endG, endB, endA).endVertex();
+        tessellator.draw();
+
+        GL11.glShadeModel(GL11.GL_FLAT);
+        disableRenderState();
+    }
+
     public static void drawOutlinedString(String text, float x, float y) {
         String string2 = text.replaceAll("(?i)§[\\da-f]", "");
         RenderUtil.mc.fontRendererObj.drawString(string2, x + 1.0f, y, 0, false);

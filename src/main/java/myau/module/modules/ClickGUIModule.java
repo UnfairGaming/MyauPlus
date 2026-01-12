@@ -1,8 +1,5 @@
 package myau.module.modules;
 
-// import myau.event.EventTarget;
-// import myau.event.types.EventType;
-// import myau.events.Event;
 import myau.module.Category;
 import myau.module.Module;
 import myau.property.properties.BooleanProperty;
@@ -15,8 +12,9 @@ import org.lwjgl.input.Keyboard;
 public class ClickGUIModule extends Module {
 
     public BooleanProperty saveGuiState = new BooleanProperty("Save GUI State", true);
-    public IntProperty windowX = new IntProperty("Window X", 50, 0, 1000);
-    public IntProperty windowY = new IntProperty("Window Y", 50, 0, 1000);
+    // --- 新增：阴影开关 ---
+    public BooleanProperty shadow = new BooleanProperty("Shadow", true);
+
     public IntProperty windowWidth = new IntProperty("Window Width", 600, 300, 1200);
     public IntProperty windowHeight = new IntProperty("Window Height", 400, 200, 800);
     public FloatProperty cornerRadius = new FloatProperty("Corner Radius", 8.0f, 0.0f, 20.0f);

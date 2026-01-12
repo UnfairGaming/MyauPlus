@@ -84,13 +84,13 @@ public class GuiBackgroundSelector extends GuiScreen {
 
         // 3. 动画逻辑
         if (closing) {
-            openAnim = AnimationUtil.animate(0.0f, openAnim, 0.2f);
+            openAnim = AnimationUtil.animate(0.0f, openAnim, 0.2f, 1.0f);
             if (openAnim < 0.05f) {
                 this.mc.displayGuiScreen(parent);
                 return;
             }
         } else {
-            openAnim = AnimationUtil.animate(1.0f, openAnim, 0.15f);
+            openAnim = AnimationUtil.animate(1.0f, openAnim, 0.15f, 1.0f);
         }
 
         // 4. 绘制面板

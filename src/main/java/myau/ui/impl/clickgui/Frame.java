@@ -3,6 +3,7 @@ package myau.ui.impl.clickgui;
 import myau.Myau;
 import myau.module.Category;
 import myau.module.Module;
+import myau.module.modules.ClickGUIModule; // 导入 ClickGUIModule
 import myau.ui.impl.clickgui.component.Component;
 import myau.ui.impl.clickgui.component.ModuleEntry;
 import myau.util.RenderUtil;
@@ -12,7 +13,6 @@ import net.minecraft.client.Minecraft;
 
 import java.awt.*;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 
 public class Frame extends Component {
@@ -33,7 +33,7 @@ public class Frame extends Component {
 
         if (Myau.moduleManager != null) {
             for (Module module : Myau.moduleManager.getModulesInCategory(this.category)) {
-                // --- 修改处：高度从 28 改为 22 ---
+                // 高度 22
                 this.moduleEntries.add(new ModuleEntry(module, x, 0, width, 22));
             }
         }
@@ -73,7 +73,12 @@ public class Frame extends Component {
 
         int alpha = (int)(255 * easedProgress);
 
-        if (alpha > 0) {
+        // 获取 ClickGUI 模块实例以读取 shadow 设置
+        ClickGUIModule clickGUIModule = (ClickGUIModule) Myau.moduleManager.modules.get(ClickGUIModule.class);
+        boolean shadowEnabled = clickGUIModule != null && clickGUIModule.shadow.getValue();
+
+        // 绘制阴影 (增加判断：alpha > 0 且 shadowEnabled 为 true)
+        if (alpha > 0 && shadowEnabled) {
             // 阴影颜色：纯黑，透明度随动画变化 (例如最大 120)
             int shadowAlpha = Math.min(120, (int)(alpha * 0.5));
             int shadowColor = new Color(0, 0, 0, shadowAlpha).getRGB();
@@ -178,7 +183,7 @@ public class Frame extends Component {
         }
     }
 
-    public void updatePosition(int mouseX, int mouseY, int scrollOffset) {
+    public void updatePosition(int mouseX, int mouseY) {
         if (this.dragging) {
             this.x = mouseX - this.dragX;
             this.y = mouseY - this.dragY;
@@ -204,8 +209,4 @@ public class Frame extends Component {
         return total;
     }
 
-    public boolean isMouseOver(int mouseX, int mouseY, int scrollOffset) {
-        int actualY = this.y - scrollOffset;
-        return mouseX >= x && mouseX <= x + width && mouseY >= actualY && mouseY <= actualY + height;
-    }
 }

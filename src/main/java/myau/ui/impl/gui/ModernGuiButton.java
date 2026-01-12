@@ -28,7 +28,7 @@ public class ModernGuiButton extends GuiButton {
                     && mouseX < this.xPosition + this.width && mouseY < this.yPosition + this.height;
 
             // 平滑动画
-            hoverProgress = AnimationUtil.animate(this.hovered ? 1.0f : 0.0f, hoverProgress, 0.25f);
+            hoverProgress = AnimationUtil.animate(this.hovered ? 1.0f : 0.0f, hoverProgress, 0.25f, 1.0f);
 
             // 混合颜色
             int bgNormal = new Color(20, 20, 20, 120).getRGB();
