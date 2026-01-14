@@ -1,5 +1,4 @@
 package myau.module.modules;
-
 import com.google.common.base.CaseFormat;
 import myau.Myau;
 import myau.enums.BlinkModules;
@@ -42,14 +41,11 @@ import net.minecraft.network.play.server.S1CPacketEntityMetadata;
 import net.minecraft.util.*;
 import net.minecraft.util.MovingObjectPosition.MovingObjectType;
 import net.minecraft.world.WorldSettings.GameType;
-
 import java.awt.*;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.Locale;
-import java.util.Random;
-
 public class KillAura extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
     private static final DecimalFormat df = new DecimalFormat("+0.0;-0.0", new DecimalFormatSymbols(Locale.US));
@@ -64,9 +60,7 @@ public class KillAura extends Module {
     private long attackDelayMS = 0L;
     private int blockTick = 0;
     private int lastTickProcessed;
-    private boolean swapped = false; // 新增：用于槽位切换状态跟踪
-
-    // Properties
+    private boolean swapped = false;
     public final ModeProperty mode;
     public final ModeProperty sort;
     public final ModeProperty autoBlock;
@@ -100,7 +94,6 @@ public class KillAura extends Module {
     public final ModeProperty showTarget;
     public final ModeProperty debugLog;
 
-    // Legit Rotation Helpers
     private float[] lastLegitRotations = new float[]{0f, 0f};
     private double randomX = 0, randomY = 0, randomZ = 0;
 
@@ -109,8 +102,7 @@ public class KillAura extends Module {
         this.lastTickProcessed = 0;
         this.mode = new ModeProperty("mode", 0, new String[]{"SINGLE", "SWITCH"});
         this.sort = new ModeProperty("sort", 0, new String[]{"DISTANCE", "HEALTH", "HURT_TIME", "FOV"});
-        // 扩展AutoBlock模式，添加HypixelTest和HypixelFull
-        this.autoBlock = new ModeProperty("auto-block", 2, new String[]{"NONE", "VANILLA", "SPOOF", "HYPIXEL_BLINK", "HYPIXEL", "INTERACT", "SWAP", "LEGIT", "FAKE", "HYPIXEL_FULL", "HYPIXEL_TEST"});
+        this.autoBlock = new ModeProperty("auto-block", 2, new String[]{"NONE", "VANILLA", "SPOOF", "INTERACT", "LEGIT", "FAKE", "HYPIXEL"});
         this.autoBlockRequirePress = new BooleanProperty("auto-block-require-press", false);
         this.autoBlockCPS = new FloatProperty("auto-block-aps", 10.0F, 1.0F, 20.0F);
         this.autoBlockRange = new FloatProperty("auto-block-range", 6.0F, 3.0F, 8.0F);
@@ -146,7 +138,6 @@ public class KillAura extends Module {
         return this.isBlocking ? (long) (1000.0F / this.autoBlockCPS.getValue()) : 1000L / RandomUtil.nextLong(this.minCPS.getValue(), this.maxCPS.getValue());
     }
 
-    // GCD Fix
     private float[] applyGCD(float[] rotations, float[] prevRotations) {
         float f = mc.gameSettings.mouseSensitivity * 0.6F + 0.2F;
         float gcd = f * f * f * 8.0F * 0.15F;
@@ -160,7 +151,6 @@ public class KillAura extends Module {
         return new float[]{prevRotations[0] + deltaYaw, prevRotations[1] + deltaPitch};
     }
 
-    // 新增：HypixelTest模式专用方法
     private void setCurrentSlot() {
         if (!swapped) {
             return;
@@ -180,8 +170,7 @@ public class KillAura extends Module {
         int next = -1;
         if (currentSlot < 8) {
             next = currentSlot + 1;
-        }
-        else {
+        } else {
             next = currentSlot - 1;
         }
         return next;
@@ -197,8 +186,6 @@ public class KillAura extends Module {
                 this.attackDelayMS = this.attackDelayMS + this.getAttackDelay();
                 mc.thePlayer.swingItem();
 
-                // Raytrace check to ensure we are looking at the entity (Server side check)
-                // Even in free look, we check if the PACKET rotation is looking at the entity
                 if ((this.rotations.getValue() != 0 || !this.isBoxInAttackRange(this.target.getBox()))
                         && RotationUtil.rayTrace(this.target.getBox(), yaw, pitch, this.attackRange.getValue()) == null) {
                     return false;
@@ -415,7 +402,7 @@ public class KillAura extends Module {
 
     public boolean shouldAutoBlock() {
         if (this.isPlayerBlocking() && this.isBlocking) {
-            return !mc.thePlayer.isInWater() && !mc.thePlayer.isInLava() && (this.autoBlock.getValue() >= 3 && this.autoBlock.getValue() <= 10);
+            return !mc.thePlayer.isInWater() && !mc.thePlayer.isInLava() && (this.autoBlock.getValue() >= 3 && this.autoBlock.getValue() <= 6);
         } else {
             return false;
         }
@@ -455,25 +442,27 @@ public class KillAura extends Module {
                 boolean swap = false;
                 boolean blocked = false;
 
-                // AutoBlock Logic
                 if (block) {
                     int autoBlockMode = this.autoBlock.getValue();
                     switch (autoBlockMode) {
-                        case 0: // NONE
+                        case 0:
                             if (PlayerUtil.isUsingItem()) {
                                 this.isBlocking = true;
-                                if (!this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing) swap = true;
+                                if (!this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing)
+                                    swap = true;
                             } else {
                                 this.isBlocking = false;
-                                if (this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing) this.stopBlock();
+                                if (this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing)
+                                    this.stopBlock();
                             }
                             Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
                             this.fakeBlockState = false;
                             break;
 
-                        case 1: // VANILLA
+                        case 1:
                             if (this.hasValidTarget()) {
-                                if (!this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing) swap = true;
+                                if (!this.isPlayerBlocking() && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing)
+                                    swap = true;
                                 Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
                                 this.isBlocking = true;
                                 this.fakeBlockState = false;
@@ -484,7 +473,7 @@ public class KillAura extends Module {
                             }
                             break;
 
-                        case 2: // SPOOF
+                        case 2:
                             if (this.hasValidTarget()) {
                                 int item = ((IAccessorPlayerControllerMP) mc.playerController).getCurrentPlayerItem();
                                 if (Myau.playerStateManager.digging || Myau.playerStateManager.placing ||
@@ -505,79 +494,7 @@ public class KillAura extends Module {
                             }
                             break;
 
-                        case 3: // HYPIXEL_BLINK
-                            if (this.hasValidTarget()) {
-                                if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
-                                    switch (this.blockTick) {
-                                        case 0:
-                                            this.setCurrentSlot();
-                                            if (!this.isPlayerBlocking()) swap = true;
-                                            blocked = true;
-                                            this.blockTick = 1;
-                                            break;
-                                        case 1:
-                                            if (this.isPlayerBlocking()) {
-                                                this.stopBlock();
-                                                attack = false;
-                                                this.setNextSlot();
-                                            }
-                                            if (this.attackDelayMS <= 50L) this.blockTick = 0;
-                                            break;
-                                        default:
-                                            this.blockTick = 0;
-                                            this.setCurrentSlot();
-                                    }
-                                }
-                                this.isBlocking = true;
-                                this.fakeBlockState = true;
-                            } else {
-                                if (this.blockTick == 1 && this.isPlayerBlocking()) {
-                                    this.stopBlock();
-                                    this.setNextSlot();
-                                }
-                                this.blockTick = 0;
-                                this.setCurrentSlot();
-                                Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
-                                this.isBlocking = false;
-                                this.fakeBlockState = false;
-                            }
-                            break;
-
-                        case 4: // HYPIXEL
-                            if (this.hasValidTarget()) {
-                                if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
-                                    switch (this.blockTick) {
-                                        case 0:
-                                            if (!this.isPlayerBlocking()) swap = true;
-                                            blocked = true;
-                                            this.blockTick = 1;
-                                            break;
-                                        case 1:
-                                            if (this.isPlayerBlocking()) {
-                                                // 如果有NoSlow模块启用，随机切换槽位
-                                                if (Myau.moduleManager.modules.get(NoSlow.class).isEnabled()) {
-                                                    int randomSlot = new Random().nextInt(9);
-                                                    while (randomSlot == mc.thePlayer.inventory.currentItem) {
-                                                        randomSlot = new Random().nextInt(9);
-                                                    }
-                                                    PacketUtil.sendPacket(new C09PacketHeldItemChange(randomSlot));
-                                                    PacketUtil.sendPacket(new C09PacketHeldItemChange(mc.thePlayer.inventory.currentItem));
-                                                }
-                                                this.stopBlock();
-                                                attack = false;
-                                            }
-                                            if (this.attackDelayMS <= 50L) this.blockTick = 0;
-                                            break;
-                                        default:
-                                            this.blockTick = 0;
-                                    }
-                                }
-                                this.isBlocking = true;
-                                this.fakeBlockState = true;
-                            }
-                            break;
-
-                        case 5: // INTERACT
+                        case 3:
                             if (this.hasValidTarget()) {
                                 int item = ((IAccessorPlayerControllerMP) mc.playerController).getCurrentPlayerItem();
                                 if (mc.thePlayer.inventory.currentItem == item && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
@@ -605,43 +522,7 @@ public class KillAura extends Module {
                             }
                             break;
 
-                        case 6: // SWAP
-                            if (this.hasValidTarget()) {
-                                int item = ((IAccessorPlayerControllerMP) mc.playerController).getCurrentPlayerItem();
-                                if (mc.thePlayer.inventory.currentItem == item && !Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
-                                    switch (this.blockTick) {
-                                        case 0:
-                                            int slot = this.findSwordSlot(item);
-                                            if (slot != -1) {
-                                                if (!this.isPlayerBlocking()) swap = true;
-                                                this.blockTick = 1;
-                                            }
-                                            break;
-                                        case 1:
-                                            int swordsSlot = this.findSwordSlot(item);
-                                            if (swordsSlot == -1) {
-                                                this.blockTick = 0;
-                                            } else if (!this.isPlayerBlocking()) {
-                                                swap = true;
-                                            } else if (this.attackDelayMS <= 50L) {
-                                                PacketUtil.sendPacket(new C09PacketHeldItemChange(swordsSlot));
-                                                ((IAccessorPlayerControllerMP) mc.playerController).setCurrentPlayerItem(swordsSlot);
-                                                this.startBlock(mc.thePlayer.inventory.getStackInSlot(swordsSlot));
-                                                attack = false;
-                                                this.blockTick = 0;
-                                            }
-                                            break;
-                                        default:
-                                            this.blockTick = 0;
-                                    }
-                                    Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
-                                    this.isBlocking = true;
-                                    this.fakeBlockState = true;
-                                }
-                            }
-                            break;
-
-                        case 7: // LEGIT
+                        case 4:
                             if (this.hasValidTarget()) {
                                 if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
                                     switch (this.blockTick) {
@@ -666,7 +547,7 @@ public class KillAura extends Module {
                             }
                             break;
 
-                        case 8: // FAKE
+                        case 5:
                             Myau.blinkManager.setBlinkState(false, BlinkModules.AUTO_BLOCK);
                             this.isBlocking = false;
                             this.fakeBlockState = this.hasValidTarget();
@@ -675,36 +556,7 @@ public class KillAura extends Module {
                             }
                             break;
 
-                        case 9: // HYPIXEL_FULL
-                            if (this.hasValidTarget()) {
-                                if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
-                                    switch (this.blockTick) {
-                                        case 0:
-                                            this.setCurrentSlot();
-                                            if (!this.isPlayerBlocking()) swap = true;
-                                            blocked = true;
-                                            this.blockTick = 1;
-                                            break;
-                                        case 1:
-                                            if (this.isPlayerBlocking()) {
-                                                this.stopBlock();
-                                                attack = false;
-                                            }
-                                            if (this.attackDelayMS > 50L) break;
-                                            this.setNextSlot();
-                                            this.blockTick = 0;
-                                            break;
-                                        default:
-                                            this.blockTick = 0;
-                                            this.setCurrentSlot();
-                                    }
-                                }
-                                this.isBlocking = true;
-                                this.fakeBlockState = true;
-                            }
-                            break;
-
-                        case 10: // HYPIXEL_TEST
+                        case 6:
                             if (this.hasValidTarget()) {
                                 if (!Myau.playerStateManager.digging && !Myau.playerStateManager.placing) {
                                     switch (this.blockTick) {
@@ -735,7 +587,6 @@ public class KillAura extends Module {
                             } else {
                                 if (this.blockTick == 1 && this.isPlayerBlocking()) {
                                     this.stopBlock();
-                                    this.setNextSlot();
                                 }
                                 this.blockTick = 0;
                                 this.setCurrentSlot();
@@ -749,33 +600,27 @@ public class KillAura extends Module {
 
                 boolean attacked = false;
 
-                // --- ROTATION LOGIC START ---
                 if (this.isBoxInSwingRange(this.target.getBox())) {
                     int rotMode = this.rotations.getValue();
                     float[] targetRotations = null;
 
-                    // 1. LEGIT MODE (Free Look / Silent behavior with Legit Math)
                     if (rotMode == 1) {
-                        // Randomization
                         if (mc.thePlayer.ticksExisted % 8 == 0) {
                             randomX = RandomUtil.nextDouble(-0.15, 0.15);
                             randomY = RandomUtil.nextDouble(-0.15, 0.15);
                             randomZ = RandomUtil.nextDouble(-0.15, 0.15);
                         }
 
-                        // Calculate Target Center + Random
                         AxisAlignedBB box = this.target.getBox();
                         double targetX = (box.minX + box.maxX) / 2.0 + randomX;
                         double targetY = (box.minY + box.maxY) / 2.0 + randomY;
                         double targetZ = (box.minZ + box.maxZ) / 2.0 + randomZ;
 
-                        // Calculate Deltas (Target - EyePos) for RotationUtil
                         Vec3 eyePos = mc.thePlayer.getPositionEyes(1.0F);
                         double deltaX = targetX - eyePos.xCoord;
                         double deltaY = targetY - eyePos.yCoord;
                         double deltaZ = targetZ - eyePos.zCoord;
 
-                        // Calculate Ideal Rotations
                         float[] nextRotations = RotationUtil.getRotations(
                                 deltaX,
                                 deltaY,
@@ -786,15 +631,11 @@ public class KillAura extends Module {
                                 (float) this.smoothing.getValue() / 100.0F
                         );
 
-                        // GCD Fix
                         targetRotations = applyGCD(nextRotations, lastLegitRotations);
 
-                        // Update Internal State
                         lastLegitRotations[0] = targetRotations[0];
                         lastLegitRotations[1] = targetRotations[1];
-                    }
-                    // 2. SILENT / LOCK VIEW
-                    else if (rotMode == 2 || rotMode == 3) {
+                    } else if (rotMode == 2 || rotMode == 3) {
                         targetRotations = RotationUtil.getRotationsToBox(
                                 this.target.getBox(),
                                 event.getYaw(),
@@ -804,16 +645,13 @@ public class KillAura extends Module {
                         );
                     }
 
-                    // Apply Rotations to Packet
                     if (targetRotations != null) {
                         event.setRotation(targetRotations[0], targetRotations[1], 1);
 
-                        // LOCK_VIEW needs client rotation update
                         if (rotMode == 3) {
                             Myau.rotationManager.setRotation(targetRotations[0], targetRotations[1], 1, true);
                         }
 
-                        // Movement Fix for Silent Rotations
                         if (this.moveFix.getValue() != 0 || rotMode == 3 || rotMode == 1) {
                             event.setPervRotation(targetRotations[0], 1);
                         }
@@ -825,7 +663,6 @@ public class KillAura extends Module {
                         attacked = this.performAttack(attackYaw, attackPitch);
                     }
                 }
-                // --- ROTATION LOGIC END ---
 
                 if (swap) {
                     if (attacked) {
@@ -847,7 +684,6 @@ public class KillAura extends Module {
         if (this.isEnabled()) {
             switch (event.getType()) {
                 case PRE:
-                    // Initialize legit rotation tracker on first run
                     if (this.lastLegitRotations[0] == 0f && this.lastLegitRotations[1] == 0f && mc.thePlayer != null) {
                         this.lastLegitRotations[0] = mc.thePlayer.rotationYaw;
                         this.lastLegitRotations[1] = mc.thePlayer.rotationPitch;
@@ -883,9 +719,15 @@ public class KillAura extends Module {
                                     (entityLivingBase1, entityLivingBase2) -> {
                                         int sortBase = 0;
                                         switch (this.sort.getValue()) {
-                                            case 1: sortBase = Float.compare(TeamUtil.getHealthScore(entityLivingBase1), TeamUtil.getHealthScore(entityLivingBase2)); break;
-                                            case 2: sortBase = Integer.compare(entityLivingBase1.hurtResistantTime, entityLivingBase2.hurtResistantTime); break;
-                                            case 3: sortBase = Float.compare(RotationUtil.angleToEntity(entityLivingBase1), RotationUtil.angleToEntity(entityLivingBase2)); break;
+                                            case 1:
+                                                sortBase = Float.compare(TeamUtil.getHealthScore(entityLivingBase1), TeamUtil.getHealthScore(entityLivingBase2));
+                                                break;
+                                            case 2:
+                                                sortBase = Integer.compare(entityLivingBase1.hurtResistantTime, entityLivingBase2.hurtResistantTime);
+                                                break;
+                                            case 3:
+                                                sortBase = Float.compare(RotationUtil.angleToEntity(entityLivingBase1), RotationUtil.angleToEntity(entityLivingBase2));
+                                                break;
                                         }
                                         return sortBase != 0 ? sortBase : Double.compare(RotationUtil.distanceToEntity(entityLivingBase1), RotationUtil.distanceToEntity(entityLivingBase2));
                                     }
@@ -975,8 +817,12 @@ public class KillAura extends Module {
             if (this.showTarget.getValue() != 0 && TeamUtil.isEntityLoaded(this.target.getEntity()) && this.isAttackAllowed()) {
                 Color color = new Color(-1);
                 switch (this.showTarget.getValue()) {
-                    case 1: color = (this.target.getEntity().hurtTime > 0) ? new Color(16733525) : new Color(5635925); break;
-                    case 2: color = ((HUD) Myau.moduleManager.modules.get(HUD.class)).getColor(System.currentTimeMillis()); break;
+                    case 1:
+                        color = (this.target.getEntity().hurtTime > 0) ? new Color(16733525) : new Color(5635925);
+                        break;
+                    case 2:
+                        color = ((HUD) Myau.moduleManager.modules.get(HUD.class)).getColor(System.currentTimeMillis());
+                        break;
                 }
                 RenderUtil.enableRenderState();
                 RenderUtil.drawEntityBox(this.target.getEntity(), color.getRed(), color.getGreen(), color.getBlue());
@@ -1046,16 +892,19 @@ public class KillAura extends Module {
     public void verifyValue(String mode) {
         if (!this.autoBlock.getName().equals(mode) && !this.autoBlockCPS.getName().equals(mode)) {
             if (this.swingRange.getName().equals(mode)) {
-                if (this.swingRange.getValue() < this.attackRange.getValue()) this.attackRange.setValue(this.swingRange.getValue());
+                if (this.swingRange.getValue() < this.attackRange.getValue())
+                    this.attackRange.setValue(this.swingRange.getValue());
             } else if (this.attackRange.getName().equals(mode)) {
-                if (this.swingRange.getValue() < this.attackRange.getValue()) this.swingRange.setValue(this.attackRange.getValue());
+                if (this.swingRange.getValue() < this.attackRange.getValue())
+                    this.swingRange.setValue(this.attackRange.getValue());
             } else if (this.minCPS.getName().equals(mode)) {
                 if (this.minCPS.getValue() > this.maxCPS.getValue()) this.maxCPS.setValue(this.minCPS.getValue());
             } else {
-                if (this.maxCPS.getName().equals(mode) && this.minCPS.getValue() > this.maxCPS.getValue()) this.minCPS.setValue(this.maxCPS.getValue());
+                if (this.maxCPS.getName().equals(mode) && this.minCPS.getValue() > this.maxCPS.getValue())
+                    this.minCPS.setValue(this.maxCPS.getValue());
             }
         } else {
-            boolean badCps = this.autoBlock.getValue() >= 2 && this.autoBlock.getValue() <= 10;
+            boolean badCps = this.autoBlock.getValue() >= 2 && this.autoBlock.getValue() <= 6;
             if (badCps && this.autoBlockCPS.getValue() > 10.0F) this.autoBlockCPS.setValue(10.0F);
         }
     }
@@ -1081,10 +930,24 @@ public class KillAura extends Module {
             this.z = entityLivingBase.posZ;
         }
 
-        public EntityLivingBase getEntity() { return this.entity; }
-        public AxisAlignedBB getBox() { return this.box; }
-        public double getX() { return this.x; }
-        public double getY() { return this.y; }
-        public double getZ() { return this.z; }
+        public EntityLivingBase getEntity() {
+            return this.entity;
+        }
+
+        public AxisAlignedBB getBox() {
+            return this.box;
+        }
+
+        public double getX() {
+            return this.x;
+        }
+
+        public double getY() {
+            return this.y;
+        }
+
+        public double getZ() {
+            return this.z;
+        }
     }
 }

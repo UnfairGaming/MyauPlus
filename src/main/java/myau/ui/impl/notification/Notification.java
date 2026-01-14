@@ -17,11 +17,7 @@ import java.awt.*;
 public class Notification {
     private static final Minecraft mc = Minecraft.getMinecraft();
 
-    // --- 极限紧凑配置 ---
-    // 高度压缩至 26px，几乎只够放两行字，没有多余留白
-    private static final float HEIGHT = 26.0f;
-    private static final float RADIUS = 4.0f;
-    private static final float SHADOW_SOFTNESS = 6.0f; // 阴影收紧
+    private float height = 30.0f;
 
     private final NotificationType notificationType;
     private final String title;
@@ -33,7 +29,6 @@ public class Notification {
     private float animationY;
     private boolean showing = true;
 
-    // 字体：大字体，撑满空间
     private static final FontRenderer ICON_FONT = FontManager.noti20;
     private static final FontRenderer TITLE_FONT = FontManager.tenacity20;
     private static final FontRenderer DESC_FONT = FontManager.tenacity16;
@@ -53,12 +48,27 @@ public class Notification {
         if (!showing) return;
 
         NotificationModule module = (NotificationModule) Myau.moduleManager.modules.get(NotificationModule.class);
-        boolean shadowEnabled = module != null && module.shadow.getValue();
+        String mode = module.notificationMode.getModeString();
+        boolean shadowEnabled = module.shadow.getValue();
+        boolean isLeft = module.positionX.getValue() == 0; // 0 表示 LEFT，1 表示 RIGHT
+
+        // 动态高度设置
+        if (mode.equals("Idk")) {
+            this.height = 26.0f;
+        } else if (mode.equals("Clean")) {
+            this.height = 32.0f;
+        } else if (mode.equals("Compact")) {
+            this.height = 22.0f; // 紧凑模式高度更小
+        } else if (mode.equals("Sharp")) {
+            this.height = 28.0f;
+        } else {
+            this.height = 30.0f;
+        }
 
         long elapsed = System.currentTimeMillis() - startTime;
         boolean timeUp = elapsed > maxTime;
 
-        float targetAnimX = timeUp ? getWidth() + 20 : 0;
+        float targetAnimX = timeUp ? (isLeft ? -getWidth() - 20 : getWidth() + 20) : 0;
         this.animationX = lerp(this.animationX, targetAnimX, 0.15f);
 
         if (this.animationY == -1) {
@@ -73,56 +83,140 @@ public class Notification {
 
         ScaledResolution sr = new ScaledResolution(mc);
         float width = getWidth();
-        float renderX = sr.getScaledWidth() - width - 5 + this.animationX; // 距离屏幕边缘仅 5px
+        // 根据X轴位置决定通知的渲染位置
+        float renderX;
+        if (isLeft) {
+            renderX = 5 + this.animationX; // 从左边距5开始
+        } else {
+            renderX = sr.getScaledWidth() - width - 5 + this.animationX; // 从右边距5开始
+        }
         float renderY = this.animationY;
+
+        int accentColor = notificationType.getColor().getRGB();
+        int descColor = new Color(180, 180, 180).getRGB();
+        float progress = Math.max(0, Math.min(1, 1.0f - (float)elapsed / maxTime));
 
         GL11.glPushMatrix();
 
-        // 1. 阴影 (更深、更实)
-        if (shadowEnabled) {
-            ShadowUtil.drawShadow(renderX, renderY, width, HEIGHT, RADIUS, SHADOW_SOFTNESS, new Color(0, 0, 0, 120).getRGB());
+        // 通用黑色阴影逻辑 (部分模式除外)
+        if (shadowEnabled && !mode.equals("Clean") && !mode.equals("Glow")) {
+            ShadowUtil.drawShadow(renderX, renderY, width, height, 4.0f, 6.0f, new Color(0, 0, 0, 120).getRGB());
         }
 
-        // 2. 背景 (深色高透)
-        int bgColor = new Color(20, 20, 20, 245).getRGB();
-        RenderUtil.drawRoundedRect(renderX, renderY, width, HEIGHT, RADIUS, bgColor, true, true, true, true);
+        switch (mode) {
+            case "Idk":
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(20, 20, 20, 245).getRGB(), true, true, true, true);
+                RenderUtil.drawRoundedRect(renderX, renderY, 2.5f, height, 4.0f, accentColor, true, false, true, false);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                if (!timeUp) {
+                    float barWidth = (width - 4.0f) * progress;
+                    if (barWidth > 0) RenderUtil.drawRect(renderX + 2.5f, renderY + height - 1f, renderX + 2.5f + barWidth, renderY + height, accentColor);
+                }
+                break;
 
-        // 3. 强调色
-        int accentColor = notificationType.getColor().getRGB();
+            case "Modern":
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 5.0f, new Color(28, 28, 28, 255).getRGB(), true, true, true, true);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                if (!timeUp) {
+                    RenderUtil.drawRoundedRect(renderX + 2, renderY + height - 2, (width - 4) * progress, 2, 1, accentColor, true, true, true, true);
+                }
+                break;
 
-        // 4. 左侧色条 (紧贴左边缘，撑满高度)
-        RenderUtil.drawRoundedRect(renderX, renderY, 2.5f, HEIGHT, RADIUS, accentColor, true, false, true, false);
+            case "Clean":
+                if (shadowEnabled) ShadowUtil.drawShadow(renderX, renderY, width, height, 3.0f, 8.0f, new Color(200, 200, 200, 100).getRGB());
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 3.0f, new Color(250, 250, 250).getRGB(), true, true, true, true);
+                drawIconAndText(renderX, renderY, width, height, accentColor, new Color(40, 40, 40).getRGB(), new Color(100, 100, 100).getRGB(), false);
+                break;
 
-        // 5. 图标 (紧贴色条)
-        String iconStr = getNotiIcon();
-        // 垂直居中
-        double iconY = renderY + (HEIGHT - ICON_FONT.getHeight()) / 2.0;
-        // 色条宽度2.5 + 间距2 = 4.5
-        ICON_FONT.drawString(iconStr, renderX + 5, iconY + 1, accentColor);
+            case "Split": // [新增] 分割模式：左侧方块主题色，右侧黑色
+                // 右半部分深色背景
+                RenderUtil.drawRoundedRect(renderX + height, renderY, width - height, height, 4.0f, new Color(24, 24, 24).getRGB(), false, true, false, true);
+                // 左半部分主题色方块
+                RenderUtil.drawRoundedRect(renderX, renderY, height, height, 4.0f, accentColor, true, false, true, false);
 
-        // 6. 文字布局 (核心修改：消除垂直空隙)
-        // 文本X起点：图标右侧紧贴
-        double textStartX = renderX + 5 + ICON_FONT.getStringWidth(iconStr) + 3;
+                // 图标绘制在左侧中心，使用白色
+                String splitIcon = getIconChar(false); // 用简洁图标
+                float sIconX = (float) (renderX + height/2.0f - ICON_FONT.getStringWidth(splitIcon)/2.0f);
+                float sIconY = (float) (renderY + height/2.0f - ICON_FONT.getHeight()/2.0f + 1);
+                ICON_FONT.drawString(splitIcon, sIconX, sIconY, -1);
 
-        // 标题：顶格画 (Y+2)
-        // regular16 的高度大约 8px，画在 2px 处
-        TITLE_FONT.drawString(title, textStartX, renderY + 2, -1);
+                // 文字绘制
+                float textLeft = renderX + height + 5;
+                TITLE_FONT.drawString(title, textLeft, renderY + 4, -1);
+                DESC_FONT.drawString(description, textLeft, renderY + 15, descColor);
+                break;
 
-        // 描述：紧贴标题下方 (Y+13)
-        // 2 + 11 = 13，几乎没有行距
-        DESC_FONT.drawString(description, textStartX, renderY + 13.5, new Color(180, 180, 180).getRGB());
+            case "Glow": // [新增] 柔光模式：背景半透黑，阴影为主题色
+                // 主题色光晕
+                if (shadowEnabled) {
+                    ShadowUtil.drawShadow(renderX, renderY, width, height, 4.0f, 12.0f, accentColor);
+                }
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(15, 15, 15, 240).getRGB(), true, true, true, true);
+                // 底部荧光条
+                if (!timeUp) {
+                    RenderUtil.drawRoundedRect(renderX + 4, renderY + height - 2, (width - 8) * progress, 1.5f, 0.5f, accentColor, true, true, true, true);
+                }
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                break;
 
-        // 7. 进度条 (底部 1px)
-        if (!timeUp) {
-            float progress = 1.0f - (float)elapsed / maxTime;
-            float barWidth = (width - RADIUS) * progress; // 从色条右侧开始算
-            if (barWidth > 0) {
-                // 画在最底部
-                RenderUtil.drawRect(renderX + 2.5f, renderY + HEIGHT - 1f, renderX + 2.5f + barWidth, renderY + HEIGHT, accentColor);
-            }
+            case "Compact": // [新增] 紧凑模式：高度很小(22)，左侧细条
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 3.0f, new Color(20, 20, 20, 250).getRGB(), true, true, true, true);
+                RenderUtil.drawRoundedRect(renderX, renderY, 2.0f, height, 3.0f, accentColor, true, false, true, false);
+
+                // 紧凑排版：图标缩小或微调位置
+                String cpIcon = getIconChar(false);
+                float cpIconW = (float) ICON_FONT.getStringWidth(cpIcon);
+                float cpIconY = (float) (renderY + height/2.0f - ICON_FONT.getHeight()/2.0f + 1);
+                ICON_FONT.drawString(cpIcon, renderX + 6, cpIconY, accentColor);
+
+                // 标题和描述更紧凑
+                TITLE_FONT.drawString(title, renderX + 6 + cpIconW + 4, renderY + 3, -1);
+                // 描述字体如果太大可能会挤，这里微调位置
+                DESC_FONT.drawString(description, renderX + 6 + cpIconW + 4, renderY + 12, descColor);
+                break;
+
+            case "Dark":
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 2.0f, new Color(10, 10, 10).getRGB(), true, true, true, true);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                RenderUtil.drawRect(renderX + width - 3, renderY + 4, renderX + width - 1, renderY + height - 4, accentColor);
+                break;
+
+            case "Outline":
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(20, 20, 20, 200).getRGB(), true, true, true, true);
+                RenderUtil.drawRoundedRectOutline(renderX, renderY, width, height, 4.0f, 1.0f, accentColor, true, true, true, true);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                if (!timeUp) {
+                    RenderUtil.drawRect(renderX + 4, renderY + height - 2, renderX + 4 + (width - 8) * progress, renderY + height - 1, accentColor);
+                }
+                break;
+
+            case "Glass":
+                RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(40, 40, 40, 140).getRGB(), true, true, true, true);
+                RenderUtil.drawRoundedRectOutline(renderX, renderY, width, height, 4.0f, 0.5f, new Color(255, 255, 255, 100).getRGB(), true, true, true, true);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, new Color(220, 220, 220).getRGB(), true);
+                break;
+
+            case "Sharp":
+                RenderUtil.drawRect(renderX, renderY, renderX + width, renderY + height, new Color(20, 20, 20).getRGB());
+                RenderUtil.drawRect(renderX, renderY, renderX + 2, renderY + height, accentColor);
+                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                RenderUtil.drawRect(renderX, renderY + height - 1, renderX + width * progress, renderY + height, accentColor);
+                break;
         }
 
         GL11.glPopMatrix();
+    }
+
+    private void drawIconAndText(float x, float y, float w, float h, int iconColor, int titleColor, int descColor, boolean useCircleIcon) {
+        String iconStr = getIconChar(useCircleIcon);
+        float iconW = (float) ICON_FONT.getStringWidth(iconStr);
+        float textStartX = x + 8 + iconW + 4;
+
+        float iconY = (float) (y + (h - ICON_FONT.getHeight()) / 2.0f + 1.0f);
+        ICON_FONT.drawString(iconStr, x + 8, iconY, iconColor);
+
+        TITLE_FONT.drawString(title, textStartX, y + (h/2) - 8, titleColor);
+        DESC_FONT.drawString(description, textStartX, y + (h/2) + 2, descColor);
     }
 
     private float lerp(float current, float target, float speed) {
@@ -130,25 +224,39 @@ public class Notification {
     }
 
     public float getWidth() {
-        String iconStr = getNotiIcon();
+        NotificationModule module = (NotificationModule) Myau.moduleManager.modules.get(NotificationModule.class);
+        String mode = module != null ? module.notificationMode.getModeString() : "Exhi";
+
+        // Split模式由于左侧是固定宽度的方块(宽度等于高度)，文字起始点不同，需要单独计算
+        if (mode.equals("Split")) {
+            double maxTextW = Math.max(TITLE_FONT.getStringWidth(title), DESC_FONT.getStringWidth(description));
+            return (float) (height + 5 + maxTextW + 8);
+        }
+
+        // 紧凑模式间距稍小
+        if (mode.equals("Compact")) {
+            String iconStr = getIconChar(false);
+            double iconW = ICON_FONT.getStringWidth(iconStr);
+            double maxTextW = Math.max(TITLE_FONT.getStringWidth(title), DESC_FONT.getStringWidth(description));
+            return (float) (6 + iconW + 4 + maxTextW + 6);
+        }
+
+        String iconStr = getIconChar(!mode.equals("Clean") && !mode.equals("Outline") && !mode.equals("Glow") && !mode.equals("Sharp") && !mode.equals("Compact"));
         double iconW = ICON_FONT.getStringWidth(iconStr);
         double titleW = TITLE_FONT.getStringWidth(title);
         double descW = DESC_FONT.getStringWidth(description);
-
         double maxTextW = Math.max(titleW, descW);
-
-        // 极限宽度计算：
-        // 5(Icon左边距) + IconW + 3(文字间距) + TextW + 5(右侧Padding)
-        return (float) (5 + iconW + 3 + maxTextW + 5);
+        return (float) (8 + iconW + 4 + maxTextW + 8);
     }
 
-    private String getNotiIcon() {
+    // 根据模式决定图标风格
+    private String getIconChar(boolean circleStyle) {
         switch (notificationType) {
-            case OKAY: return "H";
-            case INFO: return "M";
-            case WARNING: return "I";
-            case ERROR: return "J";
-            default: return "M";
+            case OKAY: return circleStyle ? "H" : "T";
+            case INFO: return circleStyle ? "H" : "T";
+            case WARNING: return circleStyle ? "I" : "U";
+            case ERROR: return circleStyle ? "I" : "U";
+            default: return "H";
         }
     }
 }

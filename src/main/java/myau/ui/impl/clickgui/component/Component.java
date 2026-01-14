@@ -1,13 +1,23 @@
 package myau.ui.impl.clickgui.component;
 
+import lombok.Getter;
+import lombok.Setter;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.FontRenderer;
 
 public abstract class Component {
     protected final Minecraft mc = Minecraft.getMinecraft();
-    protected final FontRenderer fr = mc.fontRendererObj;
-
-    public int x, y, width, height;
+    @Setter
+    @Getter
+    public int x;
+    @Setter
+    @Getter
+    public int y;
+    @Setter
+    @Getter
+    public int width;
+    @Setter
+    @Getter
+    public int height;
 
     public Component(int x, int y, int width, int height) {
         this.x = x;
@@ -16,57 +26,36 @@ public abstract class Component {
         this.height = height;
     }
 
-    public abstract void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset);
+    // 将此方法改为非抽象，默认调用带 deltaTime 的版本 (兼容性)
+    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset) {
+        render(mouseX, mouseY, partialTicks, animationProgress, isLast, scrollOffset, 0.016f);
+    }
+
+    // 将此方法改为 abstract，强制子类实现带 deltaTime 的动画逻辑
+    public abstract void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset, float deltaTime);
 
     public void render(int mouseX, int mouseY, float partialTicks) {
         render(mouseX, mouseY, partialTicks, 1.0f, false, 0);
     }
-
-    // Overloaded render method for animations. Components can override this to animate.
     public void render(int mouseX, int mouseY, float partialTicks, float animationProgress) {
         render(mouseX, mouseY, partialTicks, animationProgress, false, 0);
     }
-
-    // Overloaded render method for animations and corner rounding. Components can override this.
     public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast) {
         render(mouseX, mouseY, partialTicks, animationProgress, isLast, 0);
     }
 
-    // 新增带滚动偏移的方法
     public boolean mouseClicked(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
-        if (isMouseOver(mouseX, mouseY, scrollOffset) && mouseClicked(mouseX, mouseY, mouseButton)) {
-            return true;
-        }
-        return false;
+        return isMouseOver(mouseX, mouseY, scrollOffset) && mouseClicked(mouseX, mouseY, mouseButton);
     }
-
     public abstract boolean mouseClicked(int mouseX, int mouseY, int mouseButton);
     public abstract void mouseReleased(int mouseX, int mouseY, int mouseButton);
-    
-    // 新增带滚动偏移的方法
     public void mouseReleased(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
         mouseReleased(mouseX, mouseY, mouseButton);
     }
-    
     public abstract void keyTyped(char typedChar, int keyCode);
-    
-    // 新增带滚动偏移的方法
     public boolean isMouseOver(int mouseX, int mouseY, int scrollOffset) {
         int actualY = this.y - scrollOffset;
         return mouseX >= x && mouseX <= x + width && mouseY >= actualY && mouseY <= actualY + height;
     }
-    
-    public boolean isMouseOver(int mouseX, int mouseY) {
-        return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
-    }
-    
-    public int getX() { return x; }
-    public int getY() { return y; }
-    public int getWidth() { return width; }
-    public int getHeight() { return height; }
 
-    public void setX(int x) { this.x = x; }
-    public void setY(int y) { this.y = y; }
-    public void setWidth(int width) { this.width = width; }
-    public void setHeight(int height) { this.height = height; }
 }

@@ -11,13 +11,14 @@ import myau.module.modules.*;
 import myau.property.Property;
 import myau.property.PropertyManager;
 import myau.ui.impl.notification.NotificationRenderer;
+import myau.util.font.FontResourceManager;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 
 public class Myau {
     public static String clientName = "§c[§6M§ey§aa§bu§9P§dl§cu§6s§c] ";
-    public static String clientVersion = "1.3-1";
+    public static String clientVersion = "1.3-4";
     public static RotationManager rotationManager;
     public static FloatManager floatManager;
     public static BlinkManager blinkManager;
@@ -81,7 +82,7 @@ public class Myau {
         moduleManager.modules.put(FullBright.class, new FullBright());
         moduleManager.modules.put(GhostHand.class, new GhostHand());
         moduleManager.modules.put(HUD.class, new HUD());
-        moduleManager.modules.put(ClickGUIModule.class, new ClickGUIModule()); // New ClickGUI Module
+        moduleManager.modules.put(ClickGUIModule.class, new ClickGUIModule());
         moduleManager.modules.put(Indicators.class, new Indicators());
         moduleManager.modules.put(InvManager.class, new InvManager());
         moduleManager.modules.put(InvWalk.class, new InvWalk());
@@ -92,6 +93,7 @@ public class Myau {
         moduleManager.modules.put(LightningTracker.class, new LightningTracker());
         moduleManager.modules.put(LongJump.class, new LongJump());
         moduleManager.modules.put(MCF.class, new MCF());
+        moduleManager.modules.put(MoreKB.class, new MoreKB());
         moduleManager.modules.put(NameTags.class, new NameTags());
         moduleManager.modules.put(NickHider.class, new NickHider());
         moduleManager.modules.put(NoFall.class, new NoFall());
@@ -131,7 +133,7 @@ public class Myau {
         commandManager.commands.add(new TargetCommand());
         commandManager.commands.add(new ToggleCommand());
         commandManager.commands.add(new VclipCommand());
-        commandManager.commands.add(new ClickGuiCommand()); // Add ClickGuiCommand to CommandManager
+        commandManager.commands.add(new ClickGuiCommand());
         for (Module module : moduleManager.modules.values()) {
             ArrayList<Property<?>> properties = new ArrayList<>();
             for (final Field field : module.getClass().getDeclaredFields()) {
@@ -160,6 +162,11 @@ public class Myau {
         if (targetManager.file.exists()) {
             targetManager.load();
         }
-        Runtime.getRuntime().addShutdownHook(new Thread(globalConfig::save));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // 首先清理所有字体资源
+            FontResourceManager.cleanupAllFonts();
+            // 然后保存配置
+            globalConfig.save();
+        }));
     }
 }

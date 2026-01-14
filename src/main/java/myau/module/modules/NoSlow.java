@@ -18,9 +18,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.passive.EntityVillager;
+import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.IChatComponent;
+
+import java.util.Random;
 
 public class NoSlow extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
@@ -32,6 +35,8 @@ public class NoSlow extends Module {
     private static final long SPRINT_COOLDOWN_MS = 300L;
     private boolean isBlinking = false;
     private int blinkTimer = 0;
+    private boolean slotSwapped = false; // 新增：槽位切换状态跟踪
+    private int hypixelTestState = 0; // 新增：HypixelTest状态机 (0=空闲, 1=格挡中, 2=需要切换)
 
     // Properties
     public final ModeProperty swordMode;
@@ -40,6 +45,9 @@ public class NoSlow extends Module {
     public final BooleanProperty swordSprint;
     public final IntProperty swordBlinkDelay;
     public final IntProperty swordBlinkDuration;
+    public final BooleanProperty enableHypixelTest;
+    public final IntProperty hypixelTestDelay;
+    public final IntProperty hypixelTestDuration;
     public final ModeProperty foodMode;
     public final PercentProperty foodMotion;
     public final BooleanProperty foodSprint;
@@ -56,12 +64,17 @@ public class NoSlow extends Module {
     public NoSlow() {
         super("NoSlow", "Allows you to move faster.", Category.MOVEMENT, 0, false, false);
 
-        this.swordMode = new ModeProperty("sword-mode", 1, new String[]{"NONE", "VANILLA", "BLINK"});
+        this.swordMode = new ModeProperty("sword-mode", 1, new String[]{"NONE", "VANILLA", "BLINK", "HYPIXEL_TEST"});
         this.onlyKillAuraAutoBlock = new BooleanProperty("only-killaura-autoblock", false, () -> this.swordMode.getValue() != 0);
         this.swordMotion = new PercentProperty("sword-motion", 100, () -> this.swordMode.getValue() != 0);
         this.swordSprint = new BooleanProperty("sword-sprint", true, () -> this.swordMode.getValue() != 0);
         this.swordBlinkDelay = new IntProperty("sword-blink-delay", 1, 1, 10, () -> this.swordMode.getValue() == 2);
         this.swordBlinkDuration = new IntProperty("sword-blink-duration", 2, 1, 5, () -> this.swordMode.getValue() == 2);
+
+        // HypixelTest专属设置
+        this.enableHypixelTest = new BooleanProperty("enable-hypixel-test", true, () -> this.swordMode.getValue() == 3);
+        this.hypixelTestDelay = new IntProperty("hypixel-test-delay", 1, 1, 10, () -> this.swordMode.getValue() == 3);
+        this.hypixelTestDuration = new IntProperty("hypixel-test-duration", 2, 1, 5, () -> this.swordMode.getValue() == 3);
 
         this.foodMode = new ModeProperty("food-mode", 0, new String[]{"NONE", "VANILLA", "FLOAT", "BLINK"});
         this.foodMotion = new PercentProperty("food-motion", 100, () -> this.foodMode.getValue() != 0);
@@ -76,7 +89,7 @@ public class NoSlow extends Module {
         this.bowBlinkDuration = new IntProperty("bow-blink-duration", 1, 1, 5, () -> this.bowMode.getValue() == 3);
 
         this.successDetection = new BooleanProperty("success-detection", true,
-                () -> this.swordMode.getValue() == 1 || this.swordMode.getValue() == 2);
+                () -> this.swordMode.getValue() == 1 || this.swordMode.getValue() == 2 || this.swordMode.getValue() == 3);
         this.successMessage = new BooleanProperty("success-message", true,
                 () -> this.successDetection.getValue());
     }
@@ -121,6 +134,10 @@ public class NoSlow extends Module {
                 || (this.bowMode.getValue() == 3 && ItemUtil.isUsingBow());
     }
 
+    public boolean isHypixelTestMode() {
+        return this.swordMode.getValue() == 3 && ItemUtil.isHoldingSword();
+    }
+
     public boolean isAnyActive() {
         return mc.thePlayer.isUsingItem() && (this.isSwordActive() || this.isFoodActive() || this.isBowActive());
     }
@@ -139,6 +156,97 @@ public class NoSlow extends Module {
         } else {
             return ItemUtil.isUsingBow() ? this.bowMotion.getValue() : 100;
         }
+    }
+
+    // HypixelTest模式核心逻辑 - 槽位切换系统
+    private void handleHypixelTest() {
+        if (!this.enableHypixelTest.getValue() || !this.isHypixelTestMode()) {
+            return;
+        }
+
+        boolean isBlocking = PlayerUtil.isUsingItem() && ItemUtil.isHoldingSword();
+
+        switch (this.hypixelTestState) {
+            case 0: // 空闲状态
+                if (isBlocking) {
+                    this.hypixelTestState = 1; // 进入格挡状态
+                    this.lastBlockingTime = System.currentTimeMillis();
+                }
+                break;
+
+            case 1: // 格挡中
+                long blockTime = System.currentTimeMillis() - this.lastBlockingTime;
+                if (blockTime >= this.hypixelTestDelay.getValue() * 50L) { // 转换为毫秒
+                    // 到达延迟时间，准备切换槽位
+                    this.hypixelTestState = 2;
+                }
+                break;
+
+            case 2: // 需要切换槽位
+                if (this.slotSwapped) {
+                    // 已经切换过，恢复原始槽位
+                    this.restoreOriginalSlot();
+                    this.hypixelTestState = 0;
+                } else {
+                    // 切换到其他槽位
+                    this.swapToOtherSlot();
+                    this.hypixelTestState = 0;
+                }
+                break;
+        }
+    }
+
+    private void swapToOtherSlot() {
+        if (this.slotSwapped) {
+            return;
+        }
+
+        int currentSlot = mc.thePlayer.inventory.currentItem;
+        int nextSlot = this.getNextSlot(currentSlot);
+
+        if (nextSlot != -1 && nextSlot != currentSlot) {
+            mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(nextSlot));
+            this.slotSwapped = true;
+
+            if (this.successMessage.getValue()) {
+                mc.thePlayer.addChatMessage(
+                        new ChatComponentText("§a[NoSlow] §fSwitched to slot " + (nextSlot + 1))
+                );
+            }
+        }
+    }
+
+    private void restoreOriginalSlot() {
+        if (!this.slotSwapped) {
+            return;
+        }
+
+        int originalSlot = this.getOriginalSlot();
+        if (originalSlot != -1 && originalSlot != mc.thePlayer.inventory.currentItem) {
+            mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(originalSlot));
+            this.slotSwapped = false;
+        }
+    }
+
+    private int getNextSlot(int currentSlot) {
+        // 简单的+1循环切换
+        int nextSlot = (currentSlot + 1) % 9;
+
+        // 确保切换的槽位有物品（避免切换到空槽位）
+        for (int i = 0; i < 9; i++) {
+            int testSlot = (currentSlot + i + 1) % 9;
+            if (mc.thePlayer.inventory.getStackInSlot(testSlot) != null) {
+                return testSlot;
+            }
+        }
+
+        return nextSlot;
+    }
+
+    private int getOriginalSlot() {
+        // 这里可以记录原始槽位，简化起见使用当前槽位的前一个
+        int current = mc.thePlayer.inventory.currentItem;
+        return (current - 1 + 9) % 9;
     }
 
     // Blink模式核心逻辑
@@ -216,6 +324,11 @@ public class NoSlow extends Module {
         }
 
         boolean isCurrentlyBlocking = this.isSwordActive() && PlayerUtil.isUsingItem();
+
+        // HypixelTest模式处理
+        if (this.isHypixelTestMode()) {
+            this.handleHypixelTest();
+        }
 
         // Blink模式处理
         if (this.isBlinkMode() && this.shouldBlink()) {
@@ -316,6 +429,8 @@ public class NoSlow extends Module {
         this.lastCheckTime = 0L;
         this.wasBlocking = false;
         this.lastBlockingTime = 0L;
+        this.slotSwapped = false;
+        this.hypixelTestState = 0;
     }
 
     @Override
@@ -326,6 +441,14 @@ public class NoSlow extends Module {
         this.lastCheckTime = 0L;
         this.wasBlocking = false;
         this.lastBlockingTime = 0L;
+        this.slotSwapped = false;
+        this.hypixelTestState = 0;
+
+        // 确保恢复原始槽位
+        if (this.slotSwapped) {
+            this.restoreOriginalSlot();
+        }
+
         if (mc.thePlayer != null) {
             mc.thePlayer.stopUsingItem();
         }

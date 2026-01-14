@@ -2,77 +2,86 @@ package myau.ui.impl.clickgui.component;
 
 import myau.property.properties.BooleanProperty;
 import myau.ui.impl.clickgui.MaterialTheme;
+import myau.util.AnimationUtil;
 import myau.util.RenderUtil;
 import myau.util.font.FontManager;
-
 import java.awt.*;
 
 public class Switch extends Component {
-
     private final BooleanProperty booleanProperty;
+    private float toggleAnim;
 
     public Switch(BooleanProperty booleanProperty, int x, int y, int width, int height) {
         super(x, y, width, height);
         this.booleanProperty = booleanProperty;
+        this.toggleAnim = booleanProperty.getValue() ? 1.0f : 0.0f;
+    }
+
+    public BooleanProperty getProperty() {
+        return this.booleanProperty;
     }
 
     @Override
-    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset) {
-        float easedProgress = 1.0f - (float) Math.pow(1.0f - animationProgress, 4);
-        if (easedProgress <= 0) return;
-
-        int scrolledY = y - scrollOffset;
-        int alpha = (int)(255 * easedProgress);
-
-        // 1. 文字
-        if (easedProgress > 0.9f) {
-            int textColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.TEXT_COLOR, alpha);
-            float textY = scrolledY + (height - 8) / 2f; // 居中
-
-            if (FontManager.productSans16 != null) {
-                FontManager.productSans16.drawString(booleanProperty.getName(), x + 2, textY, textColor);
-            } else {
-                mc.fontRendererObj.drawStringWithShadow(booleanProperty.getName(), x + 2, scrolledY + 6, textColor);
-            }
+    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset, float deltaTime) {
+        if (!booleanProperty.isVisible()) {
+            return;
         }
 
-        // 2. 开关本体
+        int scrolledY = y - scrollOffset;
+        int alpha = (int)(255 * animationProgress);
+        float target = booleanProperty.getValue() ? 1.0f : 0.0f;
+        this.toggleAnim = AnimationUtil.animateSmooth(target, this.toggleAnim, 15.0f, deltaTime);
+        int textColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.TEXT_COLOR, alpha);
+
+        float textY = scrolledY + (height - 8) / 2f;
+        if (FontManager.productSans16 != null) {
+            FontManager.productSans16.drawString(booleanProperty.getName(), x + 2, textY, textColor);
+        } else {
+            mc.fontRendererObj.drawStringWithShadow(booleanProperty.getName(), x + 2, scrolledY + 6, textColor);
+        }
+
         int switchW = 22;
         int switchH = 12;
         int switchX = x + width - switchW - 2;
         int switchY = scrolledY + (height - switchH) / 2;
 
-        boolean enabled = booleanProperty.getValue();
-        int trackColor = enabled ? MaterialTheme.getRGBWithAlpha(MaterialTheme.PRIMARY_COLOR, alpha)
-                : new Color(60, 60, 65, alpha).getRGB();
+        int disabledColor = new Color(60, 60, 65).getRGB();
 
-        // 轨道
-        RenderUtil.drawRoundedRect(switchX, switchY, switchW, switchH, 6.0f, trackColor, true, true, true, true);
+        // --- 修改这里 ---
+        // 原来是 new Color(100, 100, 120).getRGB();
+        // 现在改为使用 MaterialTheme.PRIMARY_COLOR (紫色)
+        int enabledColor = MaterialTheme.getRGB(MaterialTheme.PRIMARY_COLOR);
+        // ---------------
 
-        // 滑块球
-        float knobSize = 8;
-        float knobX = enabled ? (switchX + switchW - knobSize - 2) : (switchX + 2);
-        float knobY = switchY + 2;
+        // 颜色插值动画
+        int switchColor = AnimationUtil.interpolateColor(disabledColor, enabledColor, toggleAnim);
 
-        int knobColor = MaterialTheme.getRGBWithAlpha(Color.WHITE, alpha);
-        RenderUtil.drawRoundedRect(knobX, knobY, knobSize, knobSize, knobSize/2, knobColor, true, true, true, true);
+        // 如果需要让开关也跟随面板透明度淡入淡出，可以手动混合 alpha
+        if (alpha < 255) {
+            Color c = new Color(switchColor);
+            switchColor = new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha).getRGB();
+        }
+
+        int knobX = switchX + (int) (toggleAnim * (switchW - switchH));
+        RenderUtil.drawRoundedRect(switchX, switchY, switchW, switchH, switchH / 2f, switchColor, true, true, true, true);
+        RenderUtil.drawRoundedRect(knobX, switchY + 1, switchH - 2, switchH - 2, (switchH - 2) / 2f, -1, true, true, true, true);
     }
 
-    @Override public boolean mouseClicked(int mouseX, int mouseY, int mouseButton) { return false; }
+    @Override
+    public boolean mouseClicked(int mouseX, int mouseY, int mouseButton) { return false; }
 
     public boolean mouseClicked(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
-        if (isMouseOver(mouseX, mouseY, scrollOffset) && mouseButton == 0) {
+        int scrolledY = y - scrollOffset;
+        // 扩大一点点击判定范围，手感更好
+        if (mouseX >= x && mouseX <= x + width && mouseY >= scrolledY && mouseY <= scrolledY + height) {
             booleanProperty.setValue(!booleanProperty.getValue());
             return true;
         }
         return false;
     }
 
-    @Override public void mouseReleased(int mouseX, int mouseY, int mouseButton) {}
-    @Override public void keyTyped(char typedChar, int keyCode) {}
-
-    public boolean isMouseOver(int mouseX, int mouseY, int scrollOffset) {
-        int actualY = this.y - scrollOffset;
-        return mouseX >= x && mouseX <= x + width && mouseY >= actualY && mouseY <= actualY + height;
-    }
+    @Override
+    public void mouseReleased(int mouseX, int mouseY, int mouseButton) {}
+    @Override
+    public void keyTyped(char typedChar, int keyCode) {}
 }

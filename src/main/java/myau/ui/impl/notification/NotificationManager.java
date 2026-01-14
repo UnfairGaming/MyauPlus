@@ -41,27 +41,44 @@ public class NotificationManager {
 
         ScaledResolution sr = new ScaledResolution(mc);
 
-        // 2. 基础 Y 坐标 (屏幕右下角)
-        // 距离底部 50px，留出空间给 ArmorHUD 等
-        float startY = sr.getScaledHeight() - 50;
+        // 2. 基础 Y 坐标 (根据位置设置)
+        float startY;
+        NotificationModule module = (NotificationModule) Myau.moduleManager.modules.get(NotificationModule.class);
+        boolean isTop = module != null && module.positionY.getValue() == 0; // 0 表示 TOP
+        
+        if (isTop) {
+            startY = 50; // 距离顶部 50px
+        } else {
+            startY = sr.getScaledHeight() - 50; // 距离底部 50px，留出空间给 ArmorHUD 等
+        }
 
-        // 如果聊天栏打开，整体上移以免遮挡
+        // 如果聊天栏打开，相应调整位置
         if (mc.currentScreen instanceof GuiChat) {
-            startY -= 14;
+            if (isTop) {
+                startY += 14; // 如果在顶部，向下移动
+            } else {
+                startY -= 14; // 如果在底部，向上移动
+            }
         }
 
         // 3. 遍历渲染
         float currentY = startY;
-        float padding = 6.0f; // 通知之间的垂直间距
+        
+        // 获取间距设置
+        float padding = (module != null) ? module.spacing.getValue() : 6.0f; // 通知之间的垂直间距
 
         for (Notification notification : notifications) {
             // 将目标 Y 坐标传给 Notification，让它自己 Lerp 过去
             notification.render(currentY);
 
-            // 只有当前高度减去 (通知高度 + 间距)
-            // 这样会形成从下往上堆叠的效果
-            // Notification.HEIGHT 为 34.0f
-            currentY -= (34.0f + padding);
+            // 根据位置决定堆叠方向
+            if (isTop) {
+                // 如果在顶部，通知向下堆叠
+                currentY += (notification.getHeight() + padding);
+            } else {
+                // 如果在底部，通知向上堆叠
+                currentY -= (notification.getHeight() + padding);
+            }
         }
     }
 

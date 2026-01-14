@@ -3,186 +3,189 @@ package myau.ui.impl.clickgui.component;
 import myau.property.properties.ColorProperty;
 import myau.ui.impl.clickgui.MaterialTheme;
 import myau.util.RenderUtil;
-import myau.util.font.FontManager;
-import net.minecraft.client.gui.Gui;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.WorldRenderer;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import org.lwjgl.input.Mouse;
-import org.lwjgl.opengl.GL11;
 
-import java.awt.*;
+import java.awt.Color;
 
 public class ColorPicker extends Component {
-
     private final ColorProperty colorProperty;
-    private boolean hovered;
-    private boolean pickingColor;
     private boolean draggingHue;
-    private boolean draggingSatBri;
-
-    private float hue, saturation, brightness;
-
-    private static final int PICKER_HEIGHT = 80;
-    private static final int HUE_SLIDER_HEIGHT = 10;
+    private boolean draggingSV;
+    private float hue;
+    private float saturation;
+    private float brightness;
 
     public ColorPicker(ColorProperty colorProperty, int x, int y, int width, int height) {
         super(x, y, width, height);
         this.colorProperty = colorProperty;
-        this.pickingColor = false;
-        this.draggingHue = false;
-        this.draggingSatBri = false;
-        updateHSBFromProperty();
+        updateHSB();
+    }
+    
+    // 添加获取属性的方法
+    public ColorProperty getProperty() {
+        return this.colorProperty;
     }
 
-    private void updateHSBFromProperty() {
-        int rgb = colorProperty.getValue();
-        float[] hsb = Color.RGBtoHSB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, null);
+    private void updateHSB() {
+        int color = colorProperty.getValue();
+        float[] hsb = Color.RGBtoHSB((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, null);
         this.hue = hsb[0];
         this.saturation = hsb[1];
         this.brightness = hsb[2];
     }
 
     @Override
-    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset) {
+    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset, float deltaTime) {
+        // 检查属性是否可见
+        if (!colorProperty.isVisible()) {
+            return; // 如果不可见，直接返回，不渲染
+        }
+        
+        int scrolledY = y - scrollOffset;
         float easedProgress = 1.0f - (float) Math.pow(1.0f - animationProgress, 4);
         if (easedProgress <= 0) return;
 
-        int scaledHeight = (int) (height * easedProgress);
+        int alpha = (int)(255 * easedProgress);
 
-        int scrolledY = y - scrollOffset;
-        int scaledY = scrolledY + (height - scaledHeight) / 2;
+        // 布局计算
+        float padding = 4;
+        float pickerX = x + padding;
+        float pickerY = scrolledY + padding;
+        float pickerW = width - (padding * 2);
+        float pickerH = height - (padding * 2);
 
-        hovered = isMouseOver(mouseX, mouseY, scrollOffset);
+        float hueHeight = 6;
+        float svHeight = pickerH - hueHeight - 4; // 留出 4px 间距
 
-        boolean shouldRoundBottom = isLast && !pickingColor;
-
-        // 背景
-        RenderUtil.drawRoundedRect(x, scaledY, width, scaledHeight, MaterialTheme.CORNER_RADIUS_SMALL * easedProgress,
-                MaterialTheme.getRGB(hovered ? MaterialTheme.SURFACE_CONTAINER_HIGH : MaterialTheme.SURFACE_CONTAINER_LOW),
-                false, false, shouldRoundBottom, shouldRoundBottom);
-
-        if (easedProgress > 0.9f) {
-            int alpha = (int) (((easedProgress - 0.9f) / 0.1f) * 255);
-            alpha = Math.max(0, Math.min(255, alpha));
-
-            int textColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.TEXT_COLOR, alpha);
-            int colorValue = (alpha << 24) | (colorProperty.getValue() & 0x00FFFFFF);
-            int outlineColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.OUTLINE_COLOR, alpha);
-
-            // --- 字体修改部分 Start ---
-            String name = colorProperty.getName();
-            // 垂直居中稍微调整
-            float textY = scrolledY + (height - 8) / 2f;
-
-            if (FontManager.productSans16 != null) {
-                FontManager.productSans16.drawString(name, x + 5, textY, textColor);
-            } else {
-                mc.fontRendererObj.drawStringWithShadow(name, x + 5, scrolledY + (height - mc.fontRendererObj.FONT_HEIGHT) / 2, textColor);
-            }
-            // --- 字体修改部分 End ---
-
-            // 颜色预览块
-            int previewSize = 14;
-            int previewX = x + width - previewSize - 5;
-            int previewY = scrolledY + (height - previewSize) / 2;
-
-            RenderUtil.drawRoundedRect(previewX, previewY, previewSize, previewSize, 4.0f, colorValue, true, true, true, true);
-            RenderUtil.drawRoundedRectOutline(previewX, previewY, previewSize, previewSize, 4.0f, 1.0f, outlineColor, true, true, true, true);
+        // 交互逻辑更新
+        if (draggingSV) {
+            float s = (mouseX - pickerX) / pickerW;
+            float b = 1.0f - ((mouseY - pickerY) / svHeight);
+            saturation = Math.max(0, Math.min(1, s));
+            brightness = Math.max(0, Math.min(1, b));
+            updateColor();
+        } else if (draggingHue) {
+            float h = (mouseX - pickerX) / pickerW;
+            hue = Math.max(0, Math.min(1, h));
+            updateColor();
+        } else if (!Mouse.isButtonDown(0)) {
+            updateHSB();
         }
 
-        if (pickingColor && easedProgress >= 1.0f) {
-            int pickerX = x;
-            int pickerY = scrolledY + height;
-            int pickerWidth = width;
+        // ==========================================
+        // 1. 绘制 SV 面板 (颜色 + 饱和度 + 亮度)
+        // ==========================================
 
-            if (Mouse.isButtonDown(0)) {
-                updateColorDuringRender(mouseX, mouseY, scrollOffset);
-            }
+        // 1.1 底色：当前色相的纯色
+        int hueColor = Color.HSBtoRGB(hue, 1.0f, 1.0f);
+        RenderUtil.drawRect(pickerX, pickerY, pickerX + pickerW, pickerY + svHeight, hueColor);
 
-            drawPicker(pickerX, pickerY, pickerWidth);
+        // 1.2 蒙版1 (水平)：左白 -> 右透明 (控制饱和度)
+        // 关键修复：强制使用水平渐变
+        drawGradientRect(pickerX, pickerY, pickerW, svHeight, 0xFFFFFFFF, 0x00FFFFFF, true);
+
+        // 1.3 蒙版2 (垂直)：上透明 -> 下黑 (控制亮度)
+        // 关键修复：强制使用垂直渐变
+        drawGradientRect(pickerX, pickerY, pickerW, svHeight, 0x00000000, 0xFF000000, false);
+
+        // 1.4 SV 指示器 (圆圈)
+        float indicatorX = pickerX + (saturation * pickerW);
+        float indicatorY = pickerY + ((1 - brightness) * svHeight);
+
+        // 双层描边，确保在任何颜色上都可见
+        RenderUtil.drawCircleOutline(indicatorX, indicatorY, 3, 2.0f, 0xFF000000); // 黑底
+        RenderUtil.drawCircleOutline(indicatorX, indicatorY, 3, 1.0f, 0xFFFFFFFF); // 白芯
+
+        // ==========================================
+        // 2. 绘制 Hue 彩虹条
+        // ==========================================
+        float hueY = pickerY + svHeight + 4;
+        drawRainbowRect(pickerX, hueY, pickerW, hueHeight);
+
+        // 2.1 Hue 指示器
+        float hueIndicatorX = pickerX + (hue * pickerW);
+        RenderUtil.drawRect(hueIndicatorX - 1, hueY, hueIndicatorX + 1, hueY + hueHeight, 0xFFFFFFFF);
+
+        // 3. 整体外边框
+        RenderUtil.drawRectOutline(pickerX - 1, pickerY - 1, pickerW + 2, pickerH + 2, 1.0f, MaterialTheme.getRGBWithAlpha(MaterialTheme.OUTLINE_COLOR, alpha));
+    }
+
+    private void updateColor() {
+        colorProperty.setValue(Color.HSBtoRGB(hue, saturation, brightness));
+    }
+
+    /**
+     * 修复核心：手动绘制彩虹条，确保每个片段都是平滑过渡
+     */
+    private void drawRainbowRect(float x, float y, float width, float height) {
+        int[] colors = {
+                0xFFFF0000, // 红
+                0xFFFFFF00, // 黄
+                0xFF00FF00, // 绿
+                0xFF00FFFF, // 青
+                0xFF0000FF, // 蓝
+                0xFFFF00FF, // 紫
+                0xFFFF0000  // 红
+        };
+
+        // 将宽度分成 6 份
+        float segmentWidth = width / 6.0f;
+
+        for (int i = 0; i < 6; i++) {
+            float currentX = x + (i * segmentWidth);
+            // 绘制当前颜色到下一个颜色的 水平 渐变
+            drawGradientRect(currentX, y, segmentWidth, height, colors[i], colors[i + 1], true);
         }
     }
 
-    private void drawPicker(int pickerX, int pickerY, int pickerWidth) {
-        int satBriHeight = PICKER_HEIGHT - HUE_SLIDER_HEIGHT;
+    /**
+     * 修复核心：完全独立的渐变绘制方法，不依赖 RenderUtil
+     * @param horizontal true 为水平渐变(左->右)，false 为垂直渐变(上->下)
+     */
+    private void drawGradientRect(float x, float y, float width, float height, int startColor, int endColor, boolean horizontal) {
+        float f = (float)(startColor >> 24 & 255) / 255.0F;
+        float f1 = (float)(startColor >> 16 & 255) / 255.0F;
+        float f2 = (float)(startColor >> 8 & 255) / 255.0F;
+        float f3 = (float)(startColor & 255) / 255.0F;
+        float f4 = (float)(endColor >> 24 & 255) / 255.0F;
+        float f5 = (float)(endColor >> 16 & 255) / 255.0F;
+        float f6 = (float)(endColor >> 8 & 255) / 255.0F;
+        float f7 = (float)(endColor & 255) / 255.0F;
 
-        // 绘制饱和度/亮度选择器
-        Color hueColor = Color.getHSBColor(this.hue, 1.0f, 1.0f);
-        drawGradientRect(pickerX, pickerY, pickerX + pickerWidth, pickerY + satBriHeight, Color.WHITE.getRGB(), hueColor.getRGB(), true);
-        drawGradientRect(pickerX, pickerY, pickerX + pickerWidth, pickerY + satBriHeight, 0, Color.BLACK.getRGB(), false);
+        GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.disableAlpha();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        GlStateManager.shadeModel(7425); // GL_SMOOTH 核心，解决色块问题的关键
 
-        // 绘制色相滑块
-        int hueSliderY = pickerY + satBriHeight;
-        for (int i = 0; i < pickerWidth; i++) {
-            float currentHue = (float) i / (pickerWidth - 1);
-            RenderUtil.drawRect(pickerX + i, hueSliderY, pickerX + i + 1, hueSliderY + HUE_SLIDER_HEIGHT, Color.getHSBColor(currentHue, 1.0f, 1.0f).getRGB());
-        }
-
-        // 绘制边框
-        RenderUtil.drawRectOutline(pickerX, pickerY, pickerWidth, PICKER_HEIGHT, 1.0f, MaterialTheme.getRGB(MaterialTheme.OUTLINE_COLOR));
-
-        // 绘制饱和度/亮度指示器
-        float indicatorX = pickerX + this.saturation * pickerWidth;
-        float indicatorY = pickerY + (1 - this.brightness) * satBriHeight;
-        Gui.drawRect((int)(indicatorX - 2), (int)(indicatorY - 0.5f), (int)(indicatorX + 2), (int)(indicatorY + 0.5f), Color.BLACK.getRGB());
-        Gui.drawRect((int)(indicatorX - 0.5f), (int)(indicatorY - 2), (int)(indicatorX + 0.5f), (int)(indicatorY + 2), Color.BLACK.getRGB());
-
-        // 绘制色相指示器
-        float hueIndicatorX = pickerX + this.hue * pickerWidth;
-        Gui.drawRect((int)(hueIndicatorX - 0.5f), hueSliderY, (int)(hueIndicatorX + 0.5f), hueSliderY + HUE_SLIDER_HEIGHT, Color.WHITE.getRGB());
-    }
-
-    private void drawGradientRect(int left, int top, int right, int bottom, int startColor, int endColor, boolean horizontal) {
-        GL11.glPushMatrix();
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glShadeModel(GL11.GL_SMOOTH);
-
-        GL11.glBegin(GL11.GL_QUADS);
+        Tessellator tessellator = Tessellator.getInstance();
+        WorldRenderer worldrenderer = tessellator.getWorldRenderer();
+        worldrenderer.begin(7, DefaultVertexFormats.POSITION_COLOR);
 
         if (horizontal) {
-            float startA = (float)((startColor >> 24) & 0xFF) / 255.0F;
-            float startR = (float)((startColor >> 16) & 0xFF) / 255.0F;
-            float startG = (float)((startColor >> 8) & 0xFF) / 255.0F;
-            float startB = (float)(startColor & 0xFF) / 255.0F;
-
-            float endA = (float)((endColor >> 24) & 0xFF) / 255.0F;
-            float endR = (float)((endColor >> 16) & 0xFF) / 255.0F;
-            float endG = (float)((endColor >> 8) & 0xFF) / 255.0F;
-            float endB = (float)(endColor & 0xFF) / 255.0F;
-
-            GL11.glColor4f(startR, startG, startB, startA);
-            GL11.glVertex2f(left, top);
-            GL11.glVertex2f(left, bottom);
-
-            GL11.glColor4f(endR, endG, endB, endA);
-            GL11.glVertex2f(right, bottom);
-            GL11.glVertex2f(right, top);
+            // 水平渐变：左侧顶点用 startColor，右侧顶点用 endColor
+            worldrenderer.pos(x + width, y, 0).color(f5, f6, f7, f4).endVertex(); // 右上
+            worldrenderer.pos(x, y, 0).color(f1, f2, f3, f).endVertex();          // 左上
+            worldrenderer.pos(x, y + height, 0).color(f1, f2, f3, f).endVertex(); // 左下
+            worldrenderer.pos(x + width, y + height, 0).color(f5, f6, f7, f4).endVertex(); // 右下
         } else {
-            float startA = (float)((startColor >> 24) & 0xFF) / 255.0F;
-            float startR = (float)((startColor >> 16) & 0xFF) / 255.0F;
-            float startG = (float)((startColor >> 8) & 0xFF) / 255.0F;
-            float startB = (float)(startColor & 0xFF) / 255.0F;
-
-            float endA = (float)((endColor >> 24) & 0xFF) / 255.0F;
-            float endR = (float)((endColor >> 16) & 0xFF) / 255.0F;
-            float endG = (float)((endColor >> 8) & 0xFF) / 255.0F;
-            float endB = (float)(endColor & 0xFF) / 255.0F;
-
-            GL11.glColor4f(startR, startG, startB, startA);
-            GL11.glVertex2f(left, top);
-            GL11.glVertex2f(right, top);
-
-            GL11.glColor4f(endR, endG, endB, endA);
-            GL11.glVertex2f(right, bottom);
-            GL11.glVertex2f(left, bottom);
+            // 垂直渐变：上方顶点用 startColor，下方顶点用 endColor
+            worldrenderer.pos(x + width, y, 0).color(f1, f2, f3, f).endVertex(); // 右上
+            worldrenderer.pos(x, y, 0).color(f1, f2, f3, f).endVertex();          // 左上
+            worldrenderer.pos(x, y + height, 0).color(f5, f6, f7, f4).endVertex(); // 左下
+            worldrenderer.pos(x + width, y + height, 0).color(f5, f6, f7, f4).endVertex(); // 右下
         }
 
-        GL11.glEnd();
+        tessellator.draw();
 
-        GL11.glShadeModel(GL11.GL_FLAT);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glDisable(GL11.GL_BLEND);
-        GL11.glPopMatrix();
+        GlStateManager.shadeModel(7424); // 恢复 GL_FLAT
+        GlStateManager.disableBlend();
+        GlStateManager.enableAlpha();
+        GlStateManager.enableTexture2D();
     }
 
     @Override
@@ -190,116 +193,44 @@ public class ColorPicker extends Component {
         return false;
     }
 
+    @Override
     public boolean mouseClicked(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
-        if (mouseButton == 0) {
-            if (isMouseOver(mouseX, mouseY, scrollOffset)) {
-                pickingColor = !pickingColor;
-                if (pickingColor) updateHSBFromProperty();
-                return true;
-            }
+        if (mouseButton != 0) return false;
 
-            if (pickingColor) {
-                int pickerX = x;
-                int pickerY = y - scrollOffset + height;
-                int pickerWidth = width;
-                int satBriHeight = PICKER_HEIGHT - HUE_SLIDER_HEIGHT;
-                int hueSliderY = pickerY + satBriHeight;
+        int scrolledY = y - scrollOffset;
+        float padding = 4;
+        float pickerX = x + padding;
+        float pickerY = scrolledY + padding;
+        float pickerW = width - (padding * 2);
+        float pickerH = height - (padding * 2);
+        float hueHeight = 6;
+        float svHeight = pickerH - hueHeight - 4;
 
-                if (mouseX >= pickerX && mouseX <= pickerX + pickerWidth && mouseY >= pickerY && mouseY <= pickerY + satBriHeight) {
-                    draggingSatBri = true;
-                    updateColorByCoordinates(mouseX, mouseY, scrollOffset);
-                    return true;
-                }
-                if (mouseX >= pickerX && mouseX <= pickerX + pickerWidth && mouseY >= hueSliderY && mouseY <= hueSliderY + HUE_SLIDER_HEIGHT) {
-                    draggingHue = true;
-                    updateColorByCoordinates(mouseX, mouseY, scrollOffset);
-                    return true;
-                }
-            }
+        // 点击 SV 面板
+        if (mouseX >= pickerX && mouseX <= pickerX + pickerW && mouseY >= pickerY && mouseY <= pickerY + svHeight) {
+            draggingSV = true;
+            return true;
+        }
+
+        // 点击 Hue 条
+        float hueY = pickerY + svHeight + 4;
+        if (mouseX >= pickerX && mouseX <= pickerX + pickerW && mouseY >= hueY && mouseY <= hueY + hueHeight) {
+            draggingHue = true;
+            return true;
         }
 
         return false;
     }
 
-    private void updateColorDuringRender(int mouseX, int mouseY, int scrollOffset) {
-        int scrolledY = y - scrollOffset;
-        int pickerX = x;
-        int pickerY = scrolledY + height;
-        int pickerWidth = width;
-        int satBriHeight = PICKER_HEIGHT - HUE_SLIDER_HEIGHT;
-
-        if ((draggingSatBri || draggingHue) && isMouseWithinExpandedArea(mouseX, mouseY, pickerX, pickerY, pickerWidth, satBriHeight, scrollOffset)) {
-            if (draggingSatBri) {
-                float relX = Math.max(0, Math.min(1, (float) (mouseX - pickerX) / pickerWidth));
-                float relY = Math.max(0, Math.min(1, 1 - (float) (mouseY - pickerY) / satBriHeight));
-
-                this.saturation = relX;
-                this.brightness = relY;
-            }
-
-            if (draggingHue) {
-                float relX = Math.max(0, Math.min(1, (float) (mouseX - pickerX) / pickerWidth));
-                this.hue = relX;
-            }
-
-            int newColor = Color.getHSBColor(this.hue, this.saturation, this.brightness).getRGB();
-            colorProperty.setValue(newColor & 0xFFFFFF);
-        }
-    }
-
-    private void updateColorByCoordinates(int mouseX, int mouseY, int scrollOffset) {
-        int scrolledY = y - scrollOffset;
-        int pickerX = x;
-        int pickerY = scrolledY + height;
-        int pickerWidth = width;
-        int satBriHeight = PICKER_HEIGHT - HUE_SLIDER_HEIGHT;
-
-        if (draggingSatBri) {
-            float relX = Math.max(0, Math.min(1, (float) (mouseX - pickerX) / pickerWidth));
-            float relY = Math.max(0, Math.min(1, 1 - (float) (mouseY - pickerY) / satBriHeight));
-
-            this.saturation = relX;
-            this.brightness = relY;
-        }
-
-        if (draggingHue) {
-            float relX = Math.max(0, Math.min(1, (float) (mouseX - pickerX) / pickerWidth));
-            this.hue = relX;
-        }
-
-        int newColor = Color.getHSBColor(this.hue, this.saturation, this.brightness).getRGB();
-        colorProperty.setValue(newColor & 0xFFFFFF);
-    }
-
-    private boolean isMouseWithinExpandedArea(int mouseX, int mouseY, int pickerX, int pickerY, int pickerWidth, int satBriHeight, int scrollOffset) {
-        int hueSliderY = pickerY + satBriHeight;
-        boolean inSatBriArea = mouseX >= pickerX && mouseX <= pickerX + pickerWidth && mouseY >= pickerY && mouseY <= pickerY + satBriHeight;
-        boolean inHueSliderArea = mouseX >= pickerX && mouseX <= pickerX + pickerWidth && mouseY >= hueSliderY && mouseY <= hueSliderY + HUE_SLIDER_HEIGHT;
-        return inSatBriArea || inHueSliderArea;
-    }
+    @Override
+    public void mouseReleased(int mouseX, int mouseY, int mouseButton) {}
 
     @Override
-    public void mouseReleased(int mouseX, int mouseY, int mouseButton) {
-    }
-
     public void mouseReleased(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
-        if (mouseButton == 0) {
-            draggingHue = false;
-            draggingSatBri = false;
-        }
+        draggingSV = false;
+        draggingHue = false;
     }
 
     @Override
     public void keyTyped(char typedChar, int keyCode) {}
-
-    @Override
-    public int getHeight() {
-        return pickingColor ? height + PICKER_HEIGHT : height;
-    }
-
-    @Override
-    public boolean isMouseOver(int mouseX, int mouseY, int scrollOffset) {
-        int actualY = this.y - scrollOffset;
-        return mouseX >= x && mouseX <= x + width && mouseY >= actualY && mouseY <= actualY + height;
-    }
 }

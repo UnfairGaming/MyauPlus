@@ -18,7 +18,7 @@ import myau.management.altmanager.Alt;
 import myau.management.altmanager.AltManagerGui;
 
 public class AltJsonHandler {
-	public static File ROOT_DIR = new File("RavenS_PLUS");
+	public static File ROOT_DIR = new File("config/MyauPLus");
     public static File alts = new File(ROOT_DIR, "alts.json");
     public static Gson prettyGson = new GsonBuilder().setPrettyPrinting().create();
     public static JsonParser jsonParser = new JsonParser();

@@ -13,41 +13,55 @@ import myau.module.Module;
 import myau.property.properties.*;
 import myau.util.ChatUtil;
 import myau.util.MoveUtil;
+import myau.util.TimerUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.network.play.client.C02PacketUseEntity;
 import net.minecraft.network.play.server.S12PacketEntityVelocity;
 import net.minecraft.network.play.server.S19PacketEntityStatus;
 import net.minecraft.network.play.server.S27PacketExplosion;
 import net.minecraft.potion.Potion;
+import net.minecraft.util.Vec3;
+
+import java.util.ArrayList;
 
 public class Velocity extends Module {
 
     // Properties
-    public final ModeProperty mode = new ModeProperty("Mode", 2, new String[]{"Vanilla", "Jump", "Prediction", "Reduce"});
+    public final ModeProperty mode = new ModeProperty("Mode", 0,
+            new String[]{"Vanilla", "Jump", "Reduce", "Prediction"});
 
     // General Settings
-    public final PercentProperty chance = new PercentProperty("Chance", 100, () -> mode.getValue() != 2);
-    public final PercentProperty horizontal = new PercentProperty("Horizontal", 0);
-    public final PercentProperty vertical = new PercentProperty("Vertical", 0);
+    public final PercentProperty chance = new PercentProperty("Chance", 100, () -> mode.getValue() != 3);
+    public final PercentProperty horizontal = new PercentProperty("Horizontal", 100);
+    public final PercentProperty vertical = new PercentProperty("Vertical", 100);
 
     // Explosion Settings
-    public final PercentProperty explosionHorizontal = new PercentProperty("ExplosionsHorizontal", 0);
-    public final PercentProperty explosionVertical = new PercentProperty("ExplosionsVertical", 0);
+    public final PercentProperty explosionHorizontal = new PercentProperty("ExplosionsHorizontal", 100);
+    public final PercentProperty explosionVertical = new PercentProperty("ExplosionsVertical", 100);
 
     // Checks & Debug
     public final BooleanProperty fakeCheck = new BooleanProperty("FakeCheck", true);
     public final BooleanProperty debugLog = new BooleanProperty("DebugLog", true);
 
-    // Prediction Mode Settings (Mode 2)
-    public final IntProperty delayTicks = new IntProperty("DelayTicks", 1, 1, 20, () -> this.mode.getValue() == 2);
-    public final PercentProperty delayChance = new PercentProperty("DelayChange", 100, () -> this.mode.getValue() == 2);
-    public final BooleanProperty jumpReset = new BooleanProperty("JumpReset", true, () -> this.mode.getValue() == 2 || this.mode.getValue() == 3);
-    public final IntProperty hurt = new IntProperty("ReduceHurtTime", 10, 1, 10, () -> this.mode.getValue() == 2);
-    public final FloatProperty astolftor = new FloatProperty("ReduceFactor", 0.6F, 0.1F, 1.0F, () -> this.mode.getValue() == 2);
-    public final BooleanProperty test = new BooleanProperty("Test", true, () -> this.mode.getValue() == 2);
+    // Reduce Mode Settings (Mode 2)
+    public final BooleanProperty jumpReset = new BooleanProperty("JumpReset", true, () -> this.mode.getValue() == 2);
+    public final IntProperty hurtTimeReduce = new IntProperty("HurtTime", 10, 1, 10, () -> this.mode.getValue() == 2);
+    public final FloatProperty reduceFactor = new FloatProperty("ReduceFactor", 0.6F, 0.1F, 1.0F, () -> this.mode.getValue() == 2);
 
     // Jump Mode Settings (Mode 1)
-    public final BooleanProperty userDp = new BooleanProperty("UserDelay", false, () -> this.mode.getValue() == 1);
+    public final BooleanProperty useDelay = new BooleanProperty("UseDelay", false, () -> this.mode.getValue() == 1);
+
+    // Prediction Mode Settings (Mode 3) - 严格按Rise参数
+    public final BooleanProperty prediction = new BooleanProperty("Prediction", true, () -> this.mode.getValue() == 3);
+    public final PercentProperty predictionFactor = new PercentProperty("Prediction Factor", 65, 1, 100, () -> this.mode.getValue() == 3 && prediction.getValue());
+    public final IntProperty smoothness = new IntProperty("Smoothness", 3, 1, 10, () -> this.mode.getValue() == 3 && prediction.getValue());
+    public final BooleanProperty autoReset = new BooleanProperty("Auto Reset", true, () -> this.mode.getValue() == 3 && prediction.getValue());
+    public final BooleanProperty strict = new BooleanProperty("Strict", false, () -> this.mode.getValue() == 3 && prediction.getValue());
+    public final BooleanProperty buffer = new BooleanProperty("Buffer", true, () -> this.mode.getValue() == 3);
+
+    // Delay Settings for Prediction
+    public final IntProperty delayTicks = new IntProperty("Delay Ticks", 2, 0, 5, () -> this.mode.getValue() == 3);
+    public final PercentProperty delayChance = new PercentProperty("Delay Chance", 100, () -> this.mode.getValue() == 3 && delayTicks.getValue() > 0);
 
     // Internal State
     private int chanceCounter = 0;
@@ -61,6 +75,22 @@ public class Velocity extends Module {
     private long lastAttackTime = 0L;
     private long blinkStartTime = 0L;
     private long reverseStartTime = 0L;
+    private long lastVelocityTime = 0L;
+
+    // Prediction Mode State
+    private final ArrayList<Vec3> motionHistory = new ArrayList<>();
+    private final ArrayList<Vec3> velocityHistory = new ArrayList<>();
+    private Vec3 predictedVelocity = new Vec3(0, 0, 0);
+    private Vec3 lastPredictedMotion = new Vec3(0, 0, 0);
+    private Vec3 velocityBuffer = new Vec3(0, 0, 0);
+    private int predictionTicks = 0;
+    private double predictionAccuracy = 1.0;
+    private double interpolationFactor = 0.0;
+    private boolean isPredicting = false;
+    private int ticksSinceLastVelocity = 0;
+
+    // 计时器
+    private final TimerUtil velocityTimer = new TimerUtil();
 
     public Velocity() {
         super("Velocity", "Allows you to modify knockback.", Category.COMBAT, 0, false, false);
@@ -78,17 +108,11 @@ public class Velocity extends Module {
         return mc.thePlayer.onGround && (killAura == null || !killAura.isEnabled() || !killAura.shouldAutoBlock());
     }
 
-    /**
-     * 判断是否处于战斗状态
-     * 用于 Reduce 模式
-     */
     private boolean isInCombat() {
         KillAura killAura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
-        // 如果 KillAura 开启且有目标，视为战斗中
         if (killAura != null && killAura.isEnabled() && killAura.target != null) {
             return true;
         }
-        // 或者距离上次攻击时间在 3秒 (3000ms) 内
         return System.currentTimeMillis() - this.lastAttackTime < 3000L;
     }
 
@@ -108,16 +132,208 @@ public class Velocity extends Module {
         }
     }
 
+    // --- Rise Prediction Mode Methods ---
+
+    private void initPrediction() {
+        motionHistory.clear();
+        velocityHistory.clear();
+        predictedVelocity = new Vec3(0, 0, 0);
+        lastPredictedMotion = new Vec3(0, 0, 0);
+        velocityBuffer = new Vec3(0, 0, 0);
+        predictionTicks = 0;
+        predictionAccuracy = 1.0;
+        interpolationFactor = 0.0;
+        isPredicting = false;
+        ticksSinceLastVelocity = 0;
+        velocityTimer.reset();
+    }
+
+    private void addMotionData(Vec3 motion) {
+        if (motionHistory.size() >= 15) {
+            motionHistory.remove(0);
+        }
+        motionHistory.add(motion);
+    }
+
+    private void addVelocityData(Vec3 velocity) {
+        if (velocityHistory.size() >= 10) {
+            velocityHistory.remove(0);
+        }
+        velocityHistory.add(velocity);
+    }
+
+    private Vec3 calculateWeightedPrediction() {
+        if (motionHistory.size() < 3) {
+            return new Vec3(0, 0, 0);
+        }
+
+        int size = motionHistory.size();
+        double x = 0, y = 0, z = 0;
+        double totalWeight = 0;
+
+        for (int i = 0; i < size; i++) {
+            double weight = (i + 1) / (double) size;
+            Vec3 data = motionHistory.get(i);
+            x += data.xCoord * weight;
+            y += data.yCoord * weight;
+            z += data.zCoord * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight > 0) {
+            x /= totalWeight;
+            y /= totalWeight;
+            z /= totalWeight;
+        }
+
+        return new Vec3(x, y, z);
+    }
+
+    private Vec3 calculateLinearPrediction() {
+        if (motionHistory.size() < 2) {
+            return new Vec3(0, 0, 0);
+        }
+
+        int lastIndex = motionHistory.size() - 1;
+        Vec3 lastMotion = motionHistory.get(lastIndex);
+        Vec3 prevMotion = motionHistory.get(lastIndex - 1);
+
+        double trendX = lastMotion.xCoord - prevMotion.xCoord;
+        double trendY = lastMotion.yCoord - prevMotion.yCoord;
+        double trendZ = lastMotion.zCoord - prevMotion.zCoord;
+
+        double factor = predictionFactor.getValue() / 100.0;
+        if (strict.getValue()) {
+            factor *= 0.8;
+        }
+
+        return new Vec3(
+                lastMotion.xCoord + trendX * factor,
+                lastMotion.yCoord + trendY * factor,
+                lastMotion.zCoord + trendZ * factor
+        );
+    }
+
+    private void updatePrediction() {
+        ticksSinceLastVelocity++;
+
+        if (motionHistory.isEmpty()) {
+            return;
+        }
+
+        Vec3 weightedPred = calculateWeightedPrediction();
+        Vec3 linearPred = calculateLinearPrediction();
+
+        double blendFactor = 0.6;
+        double x = weightedPred.xCoord * blendFactor + linearPred.xCoord * (1 - blendFactor);
+        double y = weightedPred.yCoord * blendFactor + linearPred.yCoord * (1 - blendFactor);
+        double z = weightedPred.zCoord * blendFactor + linearPred.zCoord * (1 - blendFactor);
+
+        predictedVelocity = new Vec3(x, y, z);
+
+        if (smoothness.getValue() > 1) {
+            double smoothFactor = 1.0 / (smoothness.getValue() * 2);
+            predictedVelocity = lerpVec3(lastPredictedMotion, predictedVelocity, smoothFactor);
+        }
+
+        lastPredictedMotion = predictedVelocity;
+
+        if (!velocityHistory.isEmpty()) {
+            Vec3 lastVelocity = velocityHistory.get(velocityHistory.size() - 1);
+            double dx = predictedVelocity.xCoord - lastVelocity.xCoord;
+            double dy = predictedVelocity.yCoord - lastVelocity.yCoord;
+            double dz = predictedVelocity.zCoord - lastVelocity.zCoord;
+            double error = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            predictionAccuracy = 1.0 / (1.0 + error);
+
+            if (autoReset.getValue() && error > 2.0) {
+                debug("[Prediction] Large error detected, resetting...");
+                initPrediction();
+            }
+        }
+
+        predictionTicks++;
+    }
+
+    private Vec3 lerpVec3(Vec3 start, Vec3 end, double factor) {
+        if (factor < 0) factor = 0;
+        if (factor > 1) factor = 1;
+
+        return new Vec3(
+                start.xCoord + (end.xCoord - start.xCoord) * factor,
+                start.yCoord + (end.yCoord - start.yCoord) * factor,
+                start.zCoord + (end.zCoord - start.zCoord) * factor
+        );
+    }
+
+    private Vec3 multiplyVec3(Vec3 vec, double multiplier) {
+        return new Vec3(vec.xCoord * multiplier, vec.yCoord * multiplier, vec.zCoord * multiplier);
+    }
+
+    private Vec3 addVec3(Vec3 vec1, Vec3 vec2) {
+        return new Vec3(vec1.xCoord + vec2.xCoord, vec1.yCoord + vec2.yCoord, vec1.zCoord + vec2.zCoord);
+    }
+
+    private Vec3 subtractVec3(Vec3 vec1, Vec3 vec2) {
+        return new Vec3(vec1.xCoord - vec2.xCoord, vec1.yCoord - vec2.yCoord, vec1.zCoord - vec2.zCoord);
+    }
+
+    private double lengthVec3(Vec3 vec) {
+        return Math.sqrt(vec.xCoord * vec.xCoord + vec.yCoord * vec.yCoord + vec.zCoord * vec.zCoord);
+    }
+
+    private void applyVelocityBuffer() {
+        if (!buffer.getValue() || (velocityBuffer.xCoord == 0 && velocityBuffer.yCoord == 0 && velocityBuffer.zCoord == 0)) {
+            return;
+        }
+
+        if (mc.thePlayer != null && predictionTicks < 5) {
+            double bufferFactor = 0.5;
+            mc.thePlayer.motionX += velocityBuffer.xCoord * bufferFactor;
+            mc.thePlayer.motionY += velocityBuffer.yCoord * bufferFactor;
+            mc.thePlayer.motionZ += velocityBuffer.zCoord * bufferFactor;
+
+            velocityBuffer = multiplyVec3(velocityBuffer, 0.8);
+            if (lengthVec3(velocityBuffer) < 0.01) {
+                velocityBuffer = new Vec3(0, 0, 0);
+            }
+        }
+    }
+
+    private boolean shouldDelayVelocity() {
+        if (delayTicks.getValue() <= 0 || delayChance.getValue() <= 0) {
+            return false;
+        }
+
+        delayChanceCounter = (delayChanceCounter + delayChance.getValue()) % 100;
+        if (delayChanceCounter < 100) {
+            return false;
+        }
+
+        if (isInLiquidOrWeb()) {
+            return false;
+        }
+
+        if (mc.thePlayer != null && !mc.thePlayer.onGround) {
+            return false;
+        }
+
+        if (System.currentTimeMillis() - lastAttackTime < 200) {
+            return false;
+        }
+
+        return true;
+    }
+
     // --- Events ---
 
     @EventTarget
     public void onKnockback(KnockbackEvent event) {
         if (!this.isEnabled() || event.isCancelled() || mc.thePlayer == null) {
-            this.resetState();
             return;
         }
 
-        // 处理爆炸
         if (this.pendingExplosion) {
             this.pendingExplosion = false;
             this.allowNext = true;
@@ -125,9 +341,9 @@ public class Velocity extends Module {
             return;
         }
 
-        // 假 KB 检查 (S19 Status Check)
         if (!this.allowNext && this.fakeCheck.getValue()) {
             this.allowNext = true;
+            event.setCancelled(true);
             return;
         }
         this.allowNext = true;
@@ -136,57 +352,88 @@ public class Velocity extends Module {
 
         switch (modeIndex) {
             case 0: // Vanilla
+                handleVanillaMode(event);
+                break;
             case 1: // Jump
-                this.handleStandardModes(event, modeIndex == 1);
+                handleJumpMode(event);
                 break;
-
-            case 2: // Prediction
-                this.handlePredictionMode(event);
+            case 2: // Reduce
+                handleReduceMode(event);
                 break;
-
-            case 3: // Reduce
-                this.handleReduceMode(event);
+            case 3: // Prediction
+                handlePredictionMode(event);
                 break;
         }
     }
 
-    private void handleStandardModes(KnockbackEvent event, boolean isJumpMode) {
+    private void handleVanillaMode(KnockbackEvent event) {
         this.chanceCounter = this.chanceCounter % 100 + this.chance.getValue();
         if (this.chanceCounter >= 100) {
-            if (isJumpMode && event.getY() > 0.0) {
-                this.jumpFlag = true;
-                // Jump mode keeps full motion usually, or modified
-                this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
-            } else {
-                this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
-            }
+            this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
         }
     }
 
-    private void handlePredictionMode(KnockbackEvent event) {
-        if (this.jumpReset.getValue() && event.getY() > 0.0) {
-            this.jumpFlag = true;
-            debug("[Prediction] jr!");
+    private void handleJumpMode(KnockbackEvent event) {
+        this.chanceCounter = this.chanceCounter % 100 + this.chance.getValue();
+        if (this.chanceCounter >= 100) {
+            if (event.getY() > 0.0) {
+                this.jumpFlag = true;
+            }
+            this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
         }
-        this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
     }
 
     private void handleReduceMode(KnockbackEvent event) {
-        // 核心修改：只在战斗中应用
         if (!isInCombat()) {
             return;
         }
 
         if (this.jumpReset.getValue() && event.getY() > 0.0) {
             this.jumpFlag = true;
-            debug(String.format("[Reduce] JumpReset triggered (Y=%.2f)", event.getY()));
         }
 
-        // 应用减少
+        this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
+    }
+
+    private void handlePredictionMode(KnockbackEvent event) {
         this.applyMotion(event, this.horizontal.getValue(), this.vertical.getValue());
 
-        if (this.debugLog.getValue()) {
-            debug("[Reduce] Reduce " + this.horizontal.getValue() + "%");
+        if (!prediction.getValue()) {
+            return;
+        }
+
+        Vec3 currentMotion = new Vec3(event.getX(), event.getY(), event.getZ());
+        addMotionData(currentMotion);
+
+        if (isPredicting && velocityTimer.hasTimeElapsed(50)) {
+            updatePrediction();
+
+            if (lengthVec3(predictedVelocity) > 0.1) {
+                double applyFactor = predictionAccuracy * 0.7 + 0.3;
+
+                interpolationFactor = Math.min(1.0, interpolationFactor + 0.2);
+
+                Vec3 smoothed = lerpVec3(currentMotion, predictedVelocity,
+                        interpolationFactor * applyFactor * (smoothness.getValue() / 10.0));
+
+                event.setX(smoothed.xCoord);
+                event.setY(smoothed.yCoord);
+                event.setZ(smoothed.zCoord);
+
+                if (buffer.getValue()) {
+                    Vec3 diff = subtractVec3(smoothed, currentMotion);
+                    velocityBuffer = addVec3(velocityBuffer, diff);
+                }
+
+                if (debugLog.getValue()) {
+                    debug(String.format("[Prediction] Acc:%.2f Pred:%.2f,%.2f,%.2f",
+                            predictionAccuracy, smoothed.xCoord, smoothed.yCoord, smoothed.zCoord));
+                }
+            }
+        }
+
+        if (event.getY() > 0.15) {
+            this.jumpFlag = true;
         }
     }
 
@@ -206,6 +453,7 @@ public class Velocity extends Module {
                 Entity entity = packet.getEntity(mc.theWorld);
                 if (entity == mc.thePlayer && packet.getOpCode() == 2) {
                     this.allowNext = false;
+                    debug("[Velocity] Fake KB detected");
                 }
             }
             else if (event.getPacket() instanceof S27PacketExplosion) {
@@ -213,31 +461,35 @@ public class Velocity extends Module {
             }
         }
         else if (event.getType() == EventType.SEND && !event.isCancelled()) {
-            // 记录攻击时间
-            if (this.mode.getValue() == 2 || this.mode.getValue() == 3) {
-                if (event.getPacket() instanceof C02PacketUseEntity) {
-                    C02PacketUseEntity packet = (C02PacketUseEntity) event.getPacket();
-                    if (packet.getAction() == C02PacketUseEntity.Action.ATTACK) {
-                        this.lastAttackTime = System.currentTimeMillis();
-                    }
+            if (event.getPacket() instanceof C02PacketUseEntity) {
+                C02PacketUseEntity packet = (C02PacketUseEntity) event.getPacket();
+                if (packet.getAction() == C02PacketUseEntity.Action.ATTACK) {
+                    this.lastAttackTime = System.currentTimeMillis();
                 }
             }
         }
     }
 
     private void handleVelocityPacket(PacketEvent event, S12PacketEntityVelocity packet) {
-        // Prediction Mode Logic
-        if (this.mode.getValue() == 2) {
-            LongJump longJump = (LongJump) Myau.moduleManager.modules.get(LongJump.class);
-            boolean canStartJump = longJump != null && longJump.isEnabled() && longJump.canStartJump();
+        int modeIndex = this.mode.getValue();
 
-            // 如果不在液体、不在网里、没有爆炸、不是假KB、没有正在跳跃
-            if (!this.reverseFlag && !this.isInLiquidOrWeb() && !this.pendingExplosion &&
-                    !(this.allowNext && this.fakeCheck.getValue()) && !canStartJump) {
+        Vec3 velocity = new Vec3(
+                packet.getMotionX() / 8000.0,
+                packet.getMotionY() / 8000.0,
+                packet.getMotionZ() / 8000.0
+        );
 
-                this.delayChanceCounter = this.delayChanceCounter % 100 + this.delayChance.getValue();
+        if (modeIndex == 3) {
+            addVelocityData(velocity);
+            lastVelocityTime = System.currentTimeMillis();
 
-                if (this.delayChanceCounter >= 100) {
+            if (prediction.getValue()) {
+                isPredicting = true;
+                interpolationFactor = 0.0;
+                velocityTimer.reset();
+                ticksSinceLastVelocity = 0;
+
+                if (shouldDelayVelocity()) {
                     Myau.delayManager.setDelayState(true, DelayModules.VELOCITY);
                     Myau.delayManager.delayedPacket.offer(packet);
                     event.setCancelled(true);
@@ -245,87 +497,92 @@ public class Velocity extends Module {
                     this.reverseFlag = true;
                     this.reverseStartTime = System.currentTimeMillis();
 
-                    if (this.test.getValue()) {
-                        this.blinkStartTime = System.currentTimeMillis();
-                        Myau.blinkManager.setBlinkState(true, BlinkModules.BLINK);
-                    }
-                    this.delayChanceCounter = 0;
+                    this.blinkStartTime = System.currentTimeMillis();
+                    Myau.blinkManager.setBlinkState(true, BlinkModules.BLINK);
+
+                    debug("[Prediction] Delaying velocity packet");
+                    delayChanceCounter = 0;
                     return;
                 }
             }
-            debug(String.format("Velocity (tick: %d, x: %.2f, y: %.2f, z: %.2f)",
-                    mc.thePlayer.ticksExisted, packet.getMotionX() / 8000.0, packet.getMotionY() / 8000.0, packet.getMotionZ() / 8000.0));
         }
-        // Jump Mode User Delay Logic
-        else if (this.mode.getValue() == 1 && this.userDp.getValue() && !mc.thePlayer.onGround) {
-            Myau.delayManager.setDelayState(true, DelayModules.VELOCITY);
-            Myau.delayManager.delayedPacket.offer(packet);
-            event.setCancelled(true);
-            debug("[Jump] air delay!");
+        else if (modeIndex == 1 && this.useDelay.getValue()) {
+            if (!mc.thePlayer.onGround) {
+                Myau.delayManager.setDelayState(true, DelayModules.VELOCITY);
+                Myau.delayManager.delayedPacket.offer(packet);
+                event.setCancelled(true);
+            }
         }
-        else {
-            debug(String.format("Velocity (tick: %d, x: %.2f, y: %.2f, z: %.2f)",
-                    mc.thePlayer.ticksExisted, packet.getMotionX() / 8000.0, packet.getMotionY() / 8000.0, packet.getMotionZ() / 8000.0));
-        }
+
+        debug(String.format("Velocity (mode:%d x:%.2f y:%.2f z:%.2f)",
+                modeIndex,
+                packet.getMotionX() / 8000.0,
+                packet.getMotionY() / 8000.0,
+                packet.getMotionZ() / 8000.0));
     }
 
     private void handleExplosionPacket(PacketEvent event, S27PacketExplosion packet) {
-        // 如果有任何方向的推力
         if (packet.func_149149_c() != 0.0F || packet.func_149144_d() != 0.0F || packet.func_149147_e() != 0.0F) {
             this.pendingExplosion = true;
-            // 如果设置为 0%，直接取消包，不再走 Knockback 事件
             if (this.explosionHorizontal.getValue() == 0 || this.explosionVertical.getValue() == 0) {
                 event.setCancelled(true);
             }
-            debug(String.format("Explosion (tick: %d, x: %.2f, y: %.2f, z: %.2f)",
-                    mc.thePlayer.ticksExisted,
-                    mc.thePlayer.motionX + packet.func_149149_c(),
-                    mc.thePlayer.motionY + packet.func_149144_d(),
-                    mc.thePlayer.motionZ + packet.func_149147_e()));
         }
     }
 
     @EventTarget
     public void onUpdate(UpdateEvent event) {
-        if (event.getType() != EventType.POST || this.mode.getValue() != 2) return;
+        if (event.getType() != EventType.POST) return;
 
-        // Prediction Reduce Logic
-        if (this.astolftor.getValue() < 1.0F && mc.thePlayer.hurtTime == this.hurt.getValue() &&
-                System.currentTimeMillis() - this.lastAttackTime <= 8000L) {
+        int modeIndex = this.mode.getValue();
 
-            mc.thePlayer.motionX *= this.astolftor.getValue();
-            mc.thePlayer.motionZ *= this.astolftor.getValue();
-            debug("[Prediction] reduce!");
+        if (modeIndex == 2) {
+            if (this.reduceFactor.getValue() < 1.0F && mc.thePlayer.hurtTime == this.hurtTimeReduce.getValue() &&
+                    System.currentTimeMillis() - this.lastAttackTime <= 8000L) {
+                mc.thePlayer.motionX *= this.reduceFactor.getValue();
+                mc.thePlayer.motionZ *= this.reduceFactor.getValue();
+            }
         }
 
-        // Release Delayed Packet Logic
-        if (this.reverseFlag) {
-            boolean shouldRelease = false;
-            int delayValue = this.delayTicks.getValue();
+        if (modeIndex == 3) {
+            if (prediction.getValue() && isPredicting) {
+                updatePrediction();
 
-            if (delayValue >= 1 && delayValue <= 3) {
-                long requiredDelay = delayValue == 1 ? 60L : (delayValue == 2 ? 95L : 100L);
-                if (System.currentTimeMillis() - this.reverseStartTime >= requiredDelay) {
-                    shouldRelease = true;
+                applyVelocityBuffer();
+
+                if (ticksSinceLastVelocity > 20) {
+                    isPredicting = false;
+                    if (autoReset.getValue()) {
+                        initPrediction();
+                    }
                 }
-            } else {
-                shouldRelease = this.canDelay() || this.isInLiquidOrWeb() || Myau.delayManager.isDelay() >= delayValue;
             }
 
-            if (shouldRelease) {
-                Myau.delayManager.setDelayState(false, DelayModules.VELOCITY);
-                this.reverseFlag = false;
-                Myau.blinkManager.setBlinkState(false, BlinkModules.BLINK);
+            if (this.reverseFlag) {
+                boolean shouldRelease = false;
+
+                if (delayTicks.getValue() >= 1 && delayTicks.getValue() <= 3) {
+                    long requiredDelay = delayTicks.getValue() == 1 ? 50L :
+                            (delayTicks.getValue() == 2 ? 80L : 100L);
+                    if (System.currentTimeMillis() - this.reverseStartTime >= requiredDelay) {
+                        shouldRelease = true;
+                    }
+                } else {
+                    shouldRelease = Myau.delayManager.isDelay() >= delayTicks.getValue();
+                }
+
+                if (shouldRelease) {
+                    Myau.delayManager.setDelayState(false, DelayModules.VELOCITY);
+                    this.reverseFlag = false;
+                    Myau.blinkManager.setBlinkState(false, BlinkModules.BLINK);
+                    debug("[Prediction] Released delayed packet");
+                }
             }
         }
 
         if (this.delayActive) {
             MoveUtil.setSpeed(MoveUtil.getSpeed(), MoveUtil.getMoveYaw());
             this.delayActive = false;
-        }
-
-        if (this.test.getValue()) {
-            Myau.blinkManager.setBlinkState(System.currentTimeMillis() - this.blinkStartTime < 95L, BlinkModules.BLINK);
         }
     }
 
@@ -335,16 +592,41 @@ public class Velocity extends Module {
             this.jumpFlag = false;
             if (mc.thePlayer.onGround && mc.thePlayer.isSprinting() &&
                     !mc.thePlayer.isPotionActive(Potion.jump) && !this.isInLiquidOrWeb()) {
-
                 mc.thePlayer.movementInput.jump = true;
-                debug("[Prediction/Jump] jr successfully!");
+                if (this.mode.getValue() == 3 && debugLog.getValue()) {
+                    debug("[Prediction] Jump reset applied");
+                }
+            }
+        }
+
+        if (this.mode.getValue() == 3 && prediction.getValue() && mc.thePlayer != null) {
+            Vec3 currentMotion = new Vec3(mc.thePlayer.motionX, mc.thePlayer.motionY, mc.thePlayer.motionZ);
+            if (lengthVec3(currentMotion) > 0.01) {
+                addMotionData(currentMotion);
             }
         }
     }
 
+    // 如果MoveEvent不存在，注释掉这个方法
+    /*
+    @EventTarget
+    public void onMove(MoveEvent event) {
+        if (!this.isEnabled() || this.mode.getValue() != 3 || !prediction.getValue()) {
+            return;
+        }
+
+        if (isPredicting && lengthVec3(predictedVelocity) > 0.1) {
+            double influence = predictionAccuracy * 0.3;
+            if (influence > 0.05) {
+                // 这里需要根据实际的MoveEvent结构来调整
+            }
+        }
+    }
+    */
+
     @EventTarget
     public void onLoadWorld(LoadWorldEvent event) {
-        this.resetState();
+        resetState();
     }
 
     private void resetState() {
@@ -356,18 +638,28 @@ public class Velocity extends Module {
         this.delayActive = false;
         this.reverseStartTime = 0L;
         this.jumpFlag = false;
+        this.lastVelocityTime = 0L;
+
+        if (this.mode.getValue() == 3) {
+            initPrediction();
+        }
     }
 
     @Override
     public void onEnabled() {
-        this.resetState();
+        resetState();
         this.lastAttackTime = 0L;
         this.blinkStartTime = System.currentTimeMillis();
+
+        if (this.mode.getValue() == 3) {
+            initPrediction();
+            debug("[Prediction] Mode enabled");
+        }
     }
 
     @Override
     public void onDisabled() {
-        this.resetState();
+        resetState();
         if (Myau.delayManager.getDelayModule() == DelayModules.VELOCITY) {
             Myau.delayManager.setDelayState(false, DelayModules.VELOCITY);
         }
@@ -378,7 +670,10 @@ public class Velocity extends Module {
     @Override
     public String[] getSuffix() {
         String modeName = this.mode.getModeString();
-        // 如果想要优化 CaseFormat 调用，可以缓存，但这里不频繁调用所以问题不大
+        if (this.mode.getValue() == 3 && prediction.getValue()) {
+            return new String[]{CaseFormat.UPPER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, modeName) +
+                    " PF:" + predictionFactor.getValue()};
+        }
         return new String[]{CaseFormat.UPPER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, modeName)};
     }
 }

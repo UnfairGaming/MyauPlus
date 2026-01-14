@@ -1,6 +1,7 @@
 package myau.util.font.impl;
 
 import myau.util.font.CenterMode;
+import myau.util.font.FontResourceManager;
 import myau.util.font.IFont;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
@@ -29,6 +30,25 @@ public class FontRenderer extends CharRenderer implements IFont {
         super(font, true, true);
         this.setupMinecraftColorcodes();
         this.setupBoldItalicIDs();
+        // 注册字体到资源管理器
+        FontResourceManager.registerFont(this);
+    }
+    
+    // 添加资源销毁方法
+    public void destroy() {
+        // 销毁父类资源
+        super.destroy();
+        
+        // 销毁额外的纹理资源
+        if (this.texBold != null) {
+            this.texBold.deleteGlTexture();
+        }
+        if (this.texItalic != null) {
+            this.texItalic.deleteGlTexture();
+        }
+        if (this.texItalicBold != null) {
+            this.texItalicBold.deleteGlTexture();
+        }
     }
 
     public void drawString(String text, double x, double y, @NotNull CenterMode centerMode, boolean dropShadow, int color) {
@@ -199,6 +219,17 @@ public class FontRenderer extends CharRenderer implements IFont {
     }
 
     private void setupBoldItalicIDs() {
+        // 释放旧纹理
+        if (this.texBold != null) {
+            this.texBold.deleteGlTexture();
+        }
+        if (this.texItalic != null) {
+            this.texItalic.deleteGlTexture();
+        }
+        if (this.texItalicBold != null) {
+            this.texItalicBold.deleteGlTexture();
+        }
+        
         this.texBold = this.setupTexture(this.font.deriveFont(Font.BOLD), this.antiAlias, this.fractionalMetrics, this.boldChars);
         this.texItalic = this.setupTexture(this.font.deriveFont(Font.ITALIC), this.antiAlias, this.fractionalMetrics, this.italicChars);
         this.texItalicBold = this.setupTexture(this.font.deriveFont(Font.BOLD | Font.ITALIC), this.antiAlias, this.fractionalMetrics, this.boldItalicChars);

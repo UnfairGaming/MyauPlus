@@ -11,6 +11,12 @@ import net.minecraft.util.MathHelper;
 public class MoveUtil {
     private static final Minecraft mc = Minecraft.getMinecraft();
 
+    // --- 新增的 isMoving 方法 ---
+    public static boolean isMoving() {
+        return mc.thePlayer != null && (mc.thePlayer.movementInput.moveForward != 0.0F || mc.thePlayer.movementInput.moveStrafe != 0.0F);
+    }
+    // -------------------------
+
     public static boolean isForwardPressed() {
         if (MoveUtil.mc.gameSettings.keyBindForward.isKeyDown() != MoveUtil.mc.gameSettings.keyBindBack.isKeyDown())
             return true;

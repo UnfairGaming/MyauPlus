@@ -3,20 +3,35 @@ package myau.module.modules;
 import myau.module.Category;
 import myau.module.Module;
 import myau.property.properties.BooleanProperty;
+import myau.property.properties.FloatProperty;
 import myau.property.properties.ModeProperty;
 import myau.ui.impl.notification.NotificationManager;
 import myau.ui.impl.notification.NotificationRenderer;
 
 public class NotificationModule extends Module {
-    // 模式选择 - 只保留Exhi模式
     public final ModeProperty notificationMode = new ModeProperty(
             "Mode", 0,
-            new String[]{"Exhi"}
+            new String[]{
+                    "Idk",
+                    "Modern",
+                    "Clean",
+                    "Split",
+                    "Glow",
+                    "Compact",
+                    "Dark",
+                    "Outline",
+                    "Glass",
+                    "Sharp"
+            }
     );
 
     public final BooleanProperty shadow = new BooleanProperty("Shadow", true);
-
     public final BooleanProperty moduleToggle = new BooleanProperty("Module Toggle", true);
+    public final FloatProperty spacing = new FloatProperty("Spacing", 0.0f, 0.0f, 100.0f);
+    
+    // 添加位置调节选项
+    public final ModeProperty positionX = new ModeProperty("Position X", 1, new String[]{"LEFT", "RIGHT"});
+    public final ModeProperty positionY = new ModeProperty("Position Y", 1, new String[]{"TOP", "BOTTOM"});
 
     public NotificationModule() {
         super("Notifications", "Display notifications", Category.RENDER, 0, true, false);
@@ -36,5 +51,4 @@ public class NotificationModule extends Module {
             NotificationRenderer.warning("Notifications", "Notification system disabled");
         }
     }
-
 }

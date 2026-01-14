@@ -67,6 +67,9 @@ public class AltManagerGui extends GuiScreen {
         // Initialize smooth scroll offset to match current scroll offset
         smoothScrollOffset = scrollOffset;
         
+        // Load alts from file when initializing the GUI
+        AltJsonHandler.loadAlts();
+        
         // Initialize background renderer
         BackgroundRenderer.init();
         

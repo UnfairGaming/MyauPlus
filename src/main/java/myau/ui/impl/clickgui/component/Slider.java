@@ -1,5 +1,6 @@
 package myau.ui.impl.clickgui.component;
 
+import lombok.Getter;
 import myau.property.Property;
 import myau.property.properties.FloatProperty;
 import myau.property.properties.IntProperty;
@@ -7,60 +8,83 @@ import myau.property.properties.PercentProperty;
 import myau.ui.impl.clickgui.MaterialTheme;
 import myau.util.RenderUtil;
 import myau.util.font.FontManager;
+import org.lwjgl.input.Mouse;
 
 import java.awt.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 public class Slider extends Component {
-
-    private final Property<?> property;
+    @Getter
+    private final Property property;
     private boolean dragging;
-    private boolean hovered;
+    private final double min, max;
+    private final double step;
 
-    public Slider(Property<?> property, int x, int y, int width, int height) {
+    public Slider(Property property, int x, int y, int width, int height) {
         super(x, y, width, height);
         this.property = property;
+        if (property instanceof IntProperty) {
+            this.min = ((IntProperty) property).getMinimum();
+            this.max = ((IntProperty) property).getMaximum();
+            this.step = 1.0;
+        } else if (property instanceof PercentProperty) {
+            this.min = 0;
+            this.max = 100;
+            this.step = 1.0;
+        } else { // FloatProperty
+            this.min = ((FloatProperty) property).getMinimum();
+            this.max = ((FloatProperty) property).getMaximum();
+            this.step = 0.05;
+        }
         this.dragging = false;
     }
 
     @Override
-    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset) {
-        float easedProgress = 1.0f - (float) Math.pow(1.0f - animationProgress, 4);
-        if (easedProgress <= 0) return;
+    public void render(int mouseX, int mouseY, float partialTicks, float animationProgress, boolean isLast, int scrollOffset, float deltaTime) {
+        if (!property.isVisible()) {
+            return;
+        }
 
-        int scaledHeight = (int) (height * easedProgress);
-        int scrolledY = y - scrollOffset;
-        int scaledY = scrolledY + (height - scaledHeight) / 2;
+        // --- 核心修复：拖拽逻辑 ---
+        if (this.dragging) {
+            if (Mouse.isButtonDown(0)) {
+                updateSliderValue(mouseX);
+            } else {
+                this.dragging = false;
+            }
+        }
+        // -----------------------
 
-        hovered = isMouseOver(mouseX, mouseY, scrollOffset);
-        int alpha = (int)(255 * easedProgress);
-
-        double min = 0, max = 0, value = 0;
+        double value, min, max;
         if (this.property instanceof IntProperty) {
             min = ((IntProperty) this.property).getMinimum();
             max = ((IntProperty) this.property).getMaximum();
             value = (Integer) this.property.getValue();
-        } else if (this.property instanceof FloatProperty) {
-            min = ((FloatProperty) this.property).getMinimum();
-            max = ((FloatProperty) this.property).getMaximum();
-            value = (Float) this.property.getValue();
         } else if (this.property instanceof PercentProperty) {
             min = 0; max = 100;
             value = (Integer) this.property.getValue();
+        } else { // FloatProperty
+            min = ((FloatProperty) this.property).getMinimum();
+            max = ((FloatProperty) this.property).getMaximum();
+            value = (Float) this.property.getValue();
         }
 
         double fillProgress = (max - min != 0) ? (value - min) / (max - min) : 0;
         fillProgress = Math.max(0, Math.min(1, fillProgress));
 
-        // 1. 文字 (Title & Value)
+        int scrolledY = y - scrollOffset;
+        int alpha = (int)(255 * animationProgress);
+        if (alpha < 5) return;
+
+        float easedProgress = 1.0f - (float) Math.pow(1.0f - animationProgress, 4);
+
+        // 绘制文字
         if (easedProgress > 0.5f) {
             String name = property.getName();
-            String valStr = "" + round(value, 2) + (this.property instanceof PercentProperty ? "%" : "");
+            String valStr = round(value) + (this.property instanceof PercentProperty ? "%" : "");
             int textColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.TEXT_COLOR, alpha);
-
-            float textY = scaledY + 2; // 顶部
-
+            float textY = scrolledY + 2;
             if (FontManager.productSans16 != null) {
                 FontManager.productSans16.drawString(name, x + 2, textY, textColor);
                 float valW = (float) FontManager.productSans16.getStringWidth(valStr);
@@ -71,84 +95,85 @@ public class Slider extends Component {
             }
         }
 
-        // 2. 轨道 (Track)
+        // 绘制滑块条
         int trackHeight = 4;
-        int trackY = scaledY + height - 8;
+        int trackY = scrolledY + height - 8;
         int trackX = x + 2;
         int trackWidth = width - 4;
 
-        int trackColor = new Color(60, 60, 65, alpha).getRGB();
-        RenderUtil.drawRoundedRect(trackX, trackY, trackWidth, trackHeight, 2.0f, trackColor, true, true, true, true);
+        // 底色
+        RenderUtil.drawRoundedRect(trackX, trackY, trackWidth, trackHeight, trackHeight / 2f, new Color(40, 40, 45).getRGB(), true, true, true, true);
 
-        // 3. 填充 (Fill)
-        int fillWidth = (int) (trackWidth * fillProgress);
-        if (fillWidth > 0) {
-            int fillColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.PRIMARY_COLOR, alpha);
-            RenderUtil.drawRoundedRect(trackX, trackY, fillWidth, trackHeight, 2.0f, fillColor, true, true, true, true);
+        // 填充条
+        float fillWidth = (float) (trackWidth * fillProgress);
+        int accentColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.PRIMARY_COLOR, alpha);
+        RenderUtil.drawRoundedRect(trackX, trackY, fillWidth, trackHeight, trackHeight / 2f, accentColor, true, false, false, true);
 
-            // 光晕
-            int glowColor = MaterialTheme.getRGBWithAlpha(MaterialTheme.PRIMARY_COLOR, (int)(alpha * 0.4));
-            float kX = trackX + fillWidth;
-            float kY = trackY + trackHeight / 2.0f;
-            RenderUtil.drawRoundedRect(kX - 5, kY - 5, 10, 10, 5.0f, glowColor, true, true, true, true);
+        // 圆点
+        float knobX = trackX + fillWidth - 2;
+        RenderUtil.drawRoundedRect(knobX, trackY - 2, 4, trackHeight + 4, 2, -1, true, true, true, true);
+    }
+
+    private void updateSliderValue(int mouseX) {
+        float currentTrackX = x + 2;
+        float currentTrackWidth = width - 4;
+
+        double progress = (mouseX - currentTrackX) / currentTrackWidth;
+        progress = Math.max(0, Math.min(1, progress));
+
+        double newValue = min + (max - min) * progress;
+
+        // 根据步长和类型取整
+        if (property instanceof IntProperty) {
+            property.setValue((int) Math.round(newValue));
+        } else if (property instanceof PercentProperty) {
+            property.setValue((int) Math.round(newValue));
+        } else { // FloatProperty
+            double steppedValue = Math.round(newValue / step) * step;
+            // 避免浮点数精度问题 (如 0.30000004)
+            BigDecimal bd = new BigDecimal(steppedValue);
+            bd = bd.setScale(2, RoundingMode.HALF_UP);
+            newValue = bd.doubleValue();
+            newValue = Math.max(min, Math.min(max, newValue));
+            property.setValue((float) newValue);
         }
-
-        // 4. 拖拽球
-        float knobX = trackX + fillWidth;
-        float knobY = trackY + trackHeight / 2.0f;
-        int knobColor = MaterialTheme.getRGBWithAlpha(Color.WHITE, alpha);
-        float radius = dragging ? 4.0f : 2.5f;
-        RenderUtil.drawRoundedRect(knobX - radius, knobY - radius, radius*2, radius*2, radius, knobColor, true, true, true, true);
-
-        if (this.dragging) updateValue(mouseX, scrollOffset);
     }
 
-    private void updateValue(int mouseX, int scrollOffset) {
-        double min = 0, max = 0;
-        if (this.property instanceof IntProperty) { min = ((IntProperty)property).getMinimum(); max = ((IntProperty)property).getMaximum(); }
-        else if (this.property instanceof FloatProperty) { min = ((FloatProperty)property).getMinimum(); max = ((FloatProperty)property).getMaximum(); }
-        else if (this.property instanceof PercentProperty) { min = 0; max = 100; }
-
-        int trackX = x + 2;
-        int trackWidth = width - 4;
-
-        double percent = (double) (mouseX - trackX) / (double) trackWidth;
-        percent = Math.max(0, Math.min(1, percent));
-        double value = min + (max - min) * percent;
-
-        if (this.property instanceof IntProperty) property.setValue((int) round(value, 0));
-        else if (this.property instanceof FloatProperty) property.setValue((float) round(value, 2));
-        else if (this.property instanceof PercentProperty) property.setValue((int) round(value, 0));
-    }
-
-    private double round(double value, int places) {
-        if (places < 0) throw new IllegalArgumentException();
+    private double round(double value) {
         BigDecimal bd = new BigDecimal(value);
-        bd = bd.setScale(places, RoundingMode.HALF_UP);
+        bd = bd.setScale(2, RoundingMode.HALF_UP);
         return bd.doubleValue();
     }
 
-    @Override public boolean mouseClicked(int mouseX, int mouseY, int mouseButton) { return false; }
+    @Override
+    public boolean mouseClicked(int mouseX, int mouseY, int mouseButton) {
+        return false;
+    }
 
+    @Override
     public boolean mouseClicked(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
-        if (isMouseOver(mouseX, mouseY, scrollOffset) && mouseButton == 0) {
-            this.dragging = true;
-            updateValue(mouseX, scrollOffset);
-            return true;
+        int scrolledY = y - scrollOffset;
+        // 扩大判定范围，更容易拖动
+        if (mouseX >= x && mouseX <= x + width && mouseY >= scrolledY + height - 12 && mouseY <= scrolledY + height) {
+            if (mouseButton == 0) {
+                this.dragging = true;
+                updateSliderValue(mouseX);
+                return true;
+            }
         }
         return false;
     }
 
-    @Override public void mouseReleased(int mouseX, int mouseY, int mouseButton) {}
+    @Override
+    public void mouseReleased(int mouseX, int mouseY, int mouseButton) {
+        this.dragging = false;
+    }
 
+    @Override
     public void mouseReleased(int mouseX, int mouseY, int mouseButton, int scrollOffset) {
         this.dragging = false;
     }
 
-    @Override public void keyTyped(char typedChar, int keyCode) {}
-
-    public boolean isMouseOver(int mouseX, int mouseY, int scrollOffset) {
-        int actualY = this.y - scrollOffset;
-        return mouseX >= x && mouseX <= x + width && mouseY >= actualY && mouseY < actualY + height;
-    }
+    @Override
+    public void keyTyped(char typedChar, int keyCode) {}
 }
