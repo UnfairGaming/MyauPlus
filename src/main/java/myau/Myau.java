@@ -18,7 +18,7 @@ import java.util.ArrayList;
 
 public class Myau {
     public static String clientName = "§c[§6M§ey§aa§bu§9P§dl§cu§6s§c] ";
-    public static String clientVersion = "1.3-4";
+    public static String clientVersion = "1.3";
     public static RotationManager rotationManager;
     public static FloatManager floatManager;
     public static BlinkManager blinkManager;
@@ -163,9 +163,7 @@ public class Myau {
             targetManager.load();
         }
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            // 首先清理所有字体资源
             FontResourceManager.cleanupAllFonts();
-            // 然后保存配置
             globalConfig.save();
         }));
     }

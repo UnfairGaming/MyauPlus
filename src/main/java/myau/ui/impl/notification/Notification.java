@@ -53,16 +53,23 @@ public class Notification {
         boolean isLeft = module.positionX.getValue() == 0; // 0 表示 LEFT，1 表示 RIGHT
 
         // 动态高度设置
-        if (mode.equals("Idk")) {
-            this.height = 26.0f;
-        } else if (mode.equals("Clean")) {
-            this.height = 32.0f;
-        } else if (mode.equals("Compact")) {
-            this.height = 22.0f; // 紧凑模式高度更小
-        } else if (mode.equals("Sharp")) {
-            this.height = 28.0f;
-        } else {
-            this.height = 30.0f;
+        switch (mode) {
+            case "Idk":
+                this.height = 26.0f;
+                break;
+            case "Clean":
+                this.height = 32.0f;
+                break;
+            case "Compact":
+                this.height = 22.0f; // 紧凑模式高度更小
+
+                break;
+            case "Sharp":
+                this.height = 28.0f;
+                break;
+            default:
+                this.height = 30.0f;
+                break;
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
@@ -107,7 +114,7 @@ public class Notification {
             case "Idk":
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(20, 20, 20, 245).getRGB(), true, true, true, true);
                 RenderUtil.drawRoundedRect(renderX, renderY, 2.5f, height, 4.0f, accentColor, true, false, true, false);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, true);
                 if (!timeUp) {
                     float barWidth = (width - 4.0f) * progress;
                     if (barWidth > 0) RenderUtil.drawRect(renderX + 2.5f, renderY + height - 1f, renderX + 2.5f + barWidth, renderY + height, accentColor);
@@ -116,7 +123,7 @@ public class Notification {
 
             case "Modern":
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 5.0f, new Color(28, 28, 28, 255).getRGB(), true, true, true, true);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, true);
                 if (!timeUp) {
                     RenderUtil.drawRoundedRect(renderX + 2, renderY + height - 2, (width - 4) * progress, 2, 1, accentColor, true, true, true, true);
                 }
@@ -125,7 +132,7 @@ public class Notification {
             case "Clean":
                 if (shadowEnabled) ShadowUtil.drawShadow(renderX, renderY, width, height, 3.0f, 8.0f, new Color(200, 200, 200, 100).getRGB());
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 3.0f, new Color(250, 250, 250).getRGB(), true, true, true, true);
-                drawIconAndText(renderX, renderY, width, height, accentColor, new Color(40, 40, 40).getRGB(), new Color(100, 100, 100).getRGB(), false);
+                drawIconAndText(renderX, renderY, height, accentColor, new Color(40, 40, 40).getRGB(), new Color(100, 100, 100).getRGB(), false);
                 break;
 
             case "Split": // [新增] 分割模式：左侧方块主题色，右侧黑色
@@ -156,7 +163,7 @@ public class Notification {
                 if (!timeUp) {
                     RenderUtil.drawRoundedRect(renderX + 4, renderY + height - 2, (width - 8) * progress, 1.5f, 0.5f, accentColor, true, true, true, true);
                 }
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, false);
                 break;
 
             case "Compact": // [新增] 紧凑模式：高度很小(22)，左侧细条
@@ -177,14 +184,14 @@ public class Notification {
 
             case "Dark":
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 2.0f, new Color(10, 10, 10).getRGB(), true, true, true, true);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, true);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, true);
                 RenderUtil.drawRect(renderX + width - 3, renderY + 4, renderX + width - 1, renderY + height - 4, accentColor);
                 break;
 
             case "Outline":
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(20, 20, 20, 200).getRGB(), true, true, true, true);
                 RenderUtil.drawRoundedRectOutline(renderX, renderY, width, height, 4.0f, 1.0f, accentColor, true, true, true, true);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, false);
                 if (!timeUp) {
                     RenderUtil.drawRect(renderX + 4, renderY + height - 2, renderX + 4 + (width - 8) * progress, renderY + height - 1, accentColor);
                 }
@@ -193,13 +200,13 @@ public class Notification {
             case "Glass":
                 RenderUtil.drawRoundedRect(renderX, renderY, width, height, 4.0f, new Color(40, 40, 40, 140).getRGB(), true, true, true, true);
                 RenderUtil.drawRoundedRectOutline(renderX, renderY, width, height, 4.0f, 0.5f, new Color(255, 255, 255, 100).getRGB(), true, true, true, true);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, new Color(220, 220, 220).getRGB(), true);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, new Color(220, 220, 220).getRGB(), true);
                 break;
 
             case "Sharp":
                 RenderUtil.drawRect(renderX, renderY, renderX + width, renderY + height, new Color(20, 20, 20).getRGB());
                 RenderUtil.drawRect(renderX, renderY, renderX + 2, renderY + height, accentColor);
-                drawIconAndText(renderX, renderY, width, height, accentColor, -1, descColor, false);
+                drawIconAndText(renderX, renderY, height, accentColor, -1, descColor, false);
                 RenderUtil.drawRect(renderX, renderY + height - 1, renderX + width * progress, renderY + height, accentColor);
                 break;
         }
@@ -207,7 +214,7 @@ public class Notification {
         GL11.glPopMatrix();
     }
 
-    private void drawIconAndText(float x, float y, float w, float h, int iconColor, int titleColor, int descColor, boolean useCircleIcon) {
+    private void drawIconAndText(float x, float y, float h, int iconColor, int titleColor, int descColor, boolean useCircleIcon) {
         String iconStr = getIconChar(useCircleIcon);
         float iconW = (float) ICON_FONT.getStringWidth(iconStr);
         float textStartX = x + 8 + iconW + 4;
@@ -241,7 +248,7 @@ public class Notification {
             return (float) (6 + iconW + 4 + maxTextW + 6);
         }
 
-        String iconStr = getIconChar(!mode.equals("Clean") && !mode.equals("Outline") && !mode.equals("Glow") && !mode.equals("Sharp") && !mode.equals("Compact"));
+        String iconStr = getIconChar(!mode.equals("Clean") && !mode.equals("Outline") && !mode.equals("Glow") && !mode.equals("Sharp"));
         double iconW = ICON_FONT.getStringWidth(iconStr);
         double titleW = TITLE_FONT.getStringWidth(title);
         double descW = DESC_FONT.getStringWidth(description);
@@ -252,10 +259,12 @@ public class Notification {
     // 根据模式决定图标风格
     private String getIconChar(boolean circleStyle) {
         switch (notificationType) {
-            case OKAY: return circleStyle ? "H" : "T";
-            case INFO: return circleStyle ? "H" : "T";
-            case WARNING: return circleStyle ? "I" : "U";
-            case ERROR: return circleStyle ? "I" : "U";
+            case OKAY:
+            case INFO:
+                return circleStyle ? "H" : "T";
+            case WARNING:
+            case ERROR:
+                return circleStyle ? "I" : "U";
             default: return "H";
         }
     }

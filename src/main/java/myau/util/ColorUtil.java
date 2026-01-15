@@ -46,4 +46,18 @@ public class ColorUtil {
     public static Color scale(Color color, float scaleFactor, int alpha) {
         return new Color(Math.min(Math.max((int) ((float) color.getRed() * scaleFactor), 0), 255), Math.min(Math.max((int) ((float) color.getGreen() * scaleFactor), 0), 255), Math.min(Math.max((int) ((float) color.getBlue() * scaleFactor), 0), 255), alpha);
     }
+
+    public static int astolfoColors(int offset, int total) {
+        float speed = 2900F;
+        float hue = (float) (System.currentTimeMillis() % (int) speed) + ((total - offset) * 9);
+        while (hue > speed) {
+            hue -= speed;
+        }
+        hue /= speed;
+        if (hue > 0.5) {
+            hue = 0.5F - (hue - 0.5F);
+        }
+        hue += 0.5F;
+        return Color.HSBtoRGB(hue, 0.5F, 1F);
+    }
 }

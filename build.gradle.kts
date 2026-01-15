@@ -79,6 +79,8 @@ dependencies {
     annotationProcessor("org.ow2.asm:asm:9.3")
     annotationProcessor("org.ow2.asm:asm-tree:9.3")
     annotationProcessor("org.ow2.asm:asm-util:9.3")
+    compileOnly("org.projectlombok:lombok:1.18.30")
+    annotationProcessor("org.projectlombok:lombok:1.18.30")
     // If you don't want to log in with your real minecraft account, remove this line
     runtimeOnly("me.djtheredstoner:DevAuth-forge-legacy:1.2.1")
 }

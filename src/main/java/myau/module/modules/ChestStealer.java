@@ -22,7 +22,7 @@ import net.minecraft.item.*;
 import net.minecraft.world.WorldSettings.GameType;
 import org.apache.commons.lang3.RandomUtils;
 
-public class ChestStealer extends Module {
+public class  ChestStealer extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
     private int clickDelay = 0;
     private int oDelay = 0;

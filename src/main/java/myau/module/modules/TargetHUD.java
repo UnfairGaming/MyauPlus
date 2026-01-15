@@ -1,7 +1,6 @@
 package myau.module.modules;
 
 import myau.Myau;
-import myau.enums.ChatColors;
 import myau.event.EventTarget;
 import myau.event.types.EventType;
 import myau.events.PacketEvent;
@@ -9,21 +8,25 @@ import myau.events.Render2DEvent;
 import myau.module.Category;
 import myau.module.Module;
 import myau.property.properties.*;
-import myau.util.ColorUtil;
-import myau.util.RenderUtil;
-import myau.util.TeamUtil;
-import myau.util.TimerUtil;
+import myau.util.*;
+import myau.util.font.FontManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.network.NetworkPlayerInfo;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.entity.RenderManager;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityArmorStand;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.entity.player.EnumPlayerModelParts;
+import net.minecraft.item.ItemArmor;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.ItemSword;
 import net.minecraft.network.play.client.C02PacketUseEntity;
 import net.minecraft.network.play.client.C02PacketUseEntity.Action;
 import net.minecraft.util.MathHelper;
@@ -31,57 +34,35 @@ import net.minecraft.util.ResourceLocation;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.*;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemSword;
-import net.minecraft.item.ItemArmor;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.client.renderer.RenderHelper;
-import net.minecraft.client.renderer.OpenGlHelper;
 
 public class TargetHUD extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
-    private static final DecimalFormat healthFormat = new DecimalFormat("0.0", new DecimalFormatSymbols(Locale.US));
-    private static final DecimalFormat diffFormat = new DecimalFormat("+0.0;-0.0", new DecimalFormatSymbols(Locale.US));
+
     private final TimerUtil lastAttackTimer = new TimerUtil();
-    private final TimerUtil animTimer = new TimerUtil();
 
     private EntityLivingBase lastTarget = null;
     private EntityLivingBase target = null;
-    private ResourceLocation headTexture = null;
 
     // Animation Variables
-    private float oldHealth = 0.0F;
-    private float newHealth = 0.0F;
-    private float maxHealth = 0.0F;
-    private float animation = 0.0f;
-    private double lastP = 0.0;
-    private double diffP = 0.0;
-
-    // 移除帧数限制相关代码，使用系统时间戳
-    private long lastRenderTime = 0;
-    private static final long MIN_RENDER_INTERVAL = 0L; // 设置为0表示无限制
+    private float healthAnim = 0.0f;
+    private float absorptionAnim = 0.0f;
 
     // Properties
-    public final ModeProperty style = new ModeProperty("style", 0, new String[]{"DEFAULT", "FLUX", "NOVOLINE", "EXHIBITION"});
-    public final ModeProperty color = new ModeProperty("color", 0, new String[]{"DEFAULT", "HUD"});
+    public final ModeProperty style = new ModeProperty("style", 1, new String[]{
+            "ASTOLFO", "EXHIBITION", "MOON", "RISE", "NEVERLOSE", "TENACITY"
+    });
+
+    public final ModeProperty colorMode = new ModeProperty("color", 0, new String[]{"SYNC", "CUSTOM", "HEALTH", "ASTOLFO"});
     public final ModeProperty posX = new ModeProperty("position-x", 1, new String[]{"LEFT", "MIDDLE", "RIGHT"});
     public final ModeProperty posY = new ModeProperty("position-y", 1, new String[]{"TOP", "MIDDLE", "BOTTOM"});
+
     public final FloatProperty scale = new FloatProperty("scale", 1.0F, 0.5F, 2.0F);
     public final IntProperty offX = new IntProperty("offset-x", 0, -500, 500);
     public final IntProperty offY = new IntProperty("offset-y", 40, -500, 500);
 
-    // Default Style Settings
-    public final PercentProperty background = new PercentProperty("background", 25, () -> style.getValue() == 0);
-    public final BooleanProperty head = new BooleanProperty("head", true, () -> style.getValue() == 0);
-    public final BooleanProperty indicator = new BooleanProperty("indicator", true, () -> style.getValue() == 0);
-    public final BooleanProperty outline = new BooleanProperty("outline", false, () -> style.getValue() == 0);
-    public final BooleanProperty animations = new BooleanProperty("animations", true);
+    // Settings
     public final BooleanProperty shadow = new BooleanProperty("shadow", true);
     public final BooleanProperty kaOnly = new BooleanProperty("ka-only", true);
     public final BooleanProperty chatPreview = new BooleanProperty("chat-preview", false);
@@ -90,254 +71,105 @@ public class TargetHUD extends Module {
         super("TargetHUD", "TargetHUD", Category.RENDER, 0, false, true);
     }
 
-    private EntityLivingBase resolveTarget() {
-        KillAura killAura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
-        if (killAura.isEnabled() && killAura.isAttackAllowed() && TeamUtil.isEntityLoaded(killAura.getTarget())) {
-            return killAura.getTarget();
-        } else if (!(Boolean) this.kaOnly.getValue() && !this.lastAttackTimer.hasTimeElapsed(1500L) && TeamUtil.isEntityLoaded(this.lastTarget)) {
-            return this.lastTarget;
-        } else {
-            return this.chatPreview.getValue() && mc.currentScreen instanceof GuiChat ? mc.thePlayer : null;
-        }
-    }
-
-    private ResourceLocation getSkin(EntityLivingBase entityLivingBase) {
-        if (entityLivingBase instanceof EntityPlayer) {
-            NetworkPlayerInfo playerInfo = mc.getNetHandler().getPlayerInfo(entityLivingBase.getName());
-            if (playerInfo != null) {
-                return playerInfo.getLocationSkin();
-            }
-        }
-        return null;
-    }
-
-    private Color getTargetColor(EntityLivingBase entityLivingBase) {
-        if (entityLivingBase instanceof EntityPlayer) {
-            if (TeamUtil.isFriend((EntityPlayer) entityLivingBase)) {
-                return Myau.friendManager.getColor();
-            }
-            if (TeamUtil.isTarget((EntityPlayer) entityLivingBase)) {
-                return Myau.targetManager.getColor();
-            }
-        }
-        switch (this.color.getValue()) {
-            case 0:
-                if (!(entityLivingBase instanceof EntityPlayer)) return new Color(-1);
-                return TeamUtil.getTeamColor((EntityPlayer) entityLivingBase, 1.0F);
-            case 1:
-                int rgb = ((HUD) Myau.moduleManager.modules.get(HUD.class)).getColor(System.currentTimeMillis()).getRGB();
-                return new Color(rgb);
-            default:
-                return new Color(-1);
-        }
-    }
-
     @EventTarget
     public void onRender(Render2DEvent event) {
         if (!this.isEnabled() || mc.thePlayer == null) return;
 
-        // 移除帧数限制 - 仅检查最小渲染间隔
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastRenderTime < MIN_RENDER_INTERVAL) {
-            return;
-        }
-        lastRenderTime = currentTime;
-
         EntityLivingBase entityLivingBase = this.target;
         this.target = this.resolveTarget();
 
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS); // 保存所有OpenGL属性
+        
         if (this.target != null) {
-            float health = (mc.thePlayer.getHealth() + mc.thePlayer.getAbsorptionAmount()) / 2.0F;
-            float abs = this.target.getAbsorptionAmount() / 2.0F;
-            float heal = this.target.getHealth() / 2.0F + abs;
-
             if (this.target != entityLivingBase) {
-                this.headTexture = null;
-                this.animTimer.setTime();
-                this.oldHealth = heal;
-                this.newHealth = heal;
-                this.animation = 0.0f;
+                this.healthAnim = this.target.getHealth();
+                this.absorptionAnim = this.target.getAbsorptionAmount();
             }
 
-            if (!this.animations.getValue() || this.animTimer.hasTimeElapsed(150L)) {
-                this.oldHealth = this.newHealth;
-                this.newHealth = heal;
-                this.maxHealth = this.target.getMaxHealth() / 2.0F;
-                if (this.oldHealth != this.newHealth) {
-                    this.animTimer.reset();
-                }
-            }
+            float frameTime = 20f / Minecraft.getDebugFPS();
+            this.healthAnim = RenderUtil.lerpFloat(this.target.getHealth(), this.healthAnim, 0.2f * frameTime);
+            this.absorptionAnim = RenderUtil.lerpFloat(this.target.getAbsorptionAmount(), this.absorptionAnim, 0.2f * frameTime);
+            this.healthAnim = MathHelper.clamp_float(this.healthAnim, 0.0f, this.target.getMaxHealth());
+
+            // ==========================================================
+            //                   STATE RESET FIX (核心修复)
+            // ==========================================================
+            // 1. 允许写入 Stencil (否则 glClear 清除不了缓存，导致模式切换后残留)
+            GL11.glStencilMask(0xFF);
+            // 2. 清除 Stencil 缓存，防止上一个模式的遮罩残留
+            // 注释掉这行，因为它可能干扰阴影渲染
+            // GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+            // 3. 确保 Stencil 测试默认是关闭的
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+            // 4. 确保 Scissor (裁剪) 测试默认是关闭的 (防止 Exhibition 模式残留)
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            // 5. 确保混合开启
+            GlStateManager.enableBlend();
+            // ==========================================================
 
             switch (this.style.getValue()) {
-                case 0: renderDefault(event, heal, health, abs); break;
-                case 1: renderFlux(event); break;
-                case 2: renderNovoline(event); break;
-                case 3: renderExhibition(event); break;
+                case 0: renderAstolfo(); break;
+                case 1: renderExhibition(); break;
+                case 2: renderMoon(); break;
+                case 3: renderRise(); break;
+                case 4: renderNeverlose(); break;
+                case 5: renderTenacity(); break;
             }
+
+            // 渲染结束后重置颜色，防止影响 Minecraft 其他部分的渲染
+            GlStateManager.resetColor();
         }
-    }
-
-    private void renderDefault(Render2DEvent event, float heal, float health, float abs) {
-        ResourceLocation resourceLocation = this.getSkin(this.target);
-        if (resourceLocation != null) {
-            this.headTexture = resourceLocation;
-        }
-        float elapsedTime = (float) Math.min(Math.max(this.animTimer.getElapsedTime(), 0L), 150L);
-        float healthRatio = Math.min(Math.max(RenderUtil.lerpFloat(this.newHealth, this.oldHealth, elapsedTime / 150.0F) / this.maxHealth, 0.0F), 1.0F);
-        Color targetColor = this.getTargetColor(this.target);
-        Color healthBarColor = this.color.getValue() == 0 ? ColorUtil.getHealthBlend(healthRatio) : targetColor;
-        float healthDeltaRatio = Math.min(Math.max((health - heal + 1.0F) / 2.0F, 0.0F), 1.0F);
-        Color healthDeltaColor = ColorUtil.getHealthBlend(healthDeltaRatio);
-        ScaledResolution scaledResolution = new ScaledResolution(mc);
-        String targetNameText = ChatColors.formatColor(String.format("&r%s&r", TeamUtil.stripName(this.target)));
-        int targetNameWidth = mc.fontRendererObj.getStringWidth(targetNameText);
-        String healthText = ChatColors.formatColor(String.format("&r&f%s%s❤&r", healthFormat.format(heal), abs > 0.0F ? "&6" : "&c"));
-        int healthTextWidth = mc.fontRendererObj.getStringWidth(healthText);
-        String statusText = ChatColors.formatColor(String.format("&r&l%s&r", heal == health ? "D" : (heal < health ? "W" : "L")));
-        int statusTextWidth = mc.fontRendererObj.getStringWidth(statusText);
-        String healthDiffText = ChatColors.formatColor(String.format("&r%s&r", heal == health ? "0.0" : diffFormat.format(health - heal)));
-        int healthDiffWidth = mc.fontRendererObj.getStringWidth(healthDiffText);
-        float barContentWidth = Math.max((float) targetNameWidth + (this.indicator.getValue() ? 2.0F + (float) statusTextWidth + 2.0F : 0.0F), (float) healthTextWidth + (this.indicator.getValue() ? 2.0F + (float) healthDiffWidth + 2.0F : 0.0F));
-        float headIconOffset = this.head.getValue() && this.headTexture != null ? 25.0F : 0.0F;
-        float barTotalWidth = Math.max(headIconOffset + 70.0F, headIconOffset + 2.0F + barContentWidth + 2.0F);
-        float[] pos = getPosition(scaledResolution, barTotalWidth, 27.0F);
-
-        GlStateManager.pushMatrix();
-        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 0.0F);
-        GlStateManager.translate(pos[0], pos[1], -450.0F);
-        RenderUtil.enableRenderState();
-        int backgroundColor = new Color(0.0F, 0.0F, 0.0F, (float) this.background.getValue() / 100.0F).getRGB();
-        int outlineColor = this.outline.getValue() ? targetColor.getRGB() : new Color(0, 0, 0, 0).getRGB();
-
-        RenderUtil.drawOutlineRect(0.0F, 0.0F, barTotalWidth, 27.0F, 1.5F, backgroundColor, outlineColor);
-        RenderUtil.drawRect(headIconOffset + 2.0F, 22.0F, barTotalWidth - 2.0F, 25.0F, ColorUtil.darker(healthBarColor, 0.2F).getRGB());
-        RenderUtil.drawRect(headIconOffset + 2.0F, 22.0F, headIconOffset + 2.0F + healthRatio * (barTotalWidth - 2.0F - headIconOffset - 2.0F), 25.0F, healthBarColor.getRGB());
-
-        RenderUtil.disableRenderState();
-        GlStateManager.disableDepth();
-        GlStateManager.enableBlend();
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        mc.fontRendererObj.drawString(targetNameText, headIconOffset + 2.0F, 2.0F, -1, this.shadow.getValue());
-        mc.fontRendererObj.drawString(healthText, headIconOffset + 2.0F, 12.0F, -1, this.shadow.getValue());
-        if (this.indicator.getValue()) {
-            mc.fontRendererObj.drawString(statusText, barTotalWidth - 2.0F - (float) statusTextWidth, 2.0F, healthDeltaColor.getRGB(), this.shadow.getValue());
-            mc.fontRendererObj.drawString(healthDiffText, barTotalWidth - 2.0F - (float) healthDiffWidth, 12.0F, ColorUtil.darker(healthDeltaColor, 0.8F).getRGB(), this.shadow.getValue());
-        }
-        if (this.head.getValue() && this.headTexture != null) {
-            GlStateManager.color(1.0F, 1.0F, 1.0F);
-            mc.getTextureManager().bindTexture(this.headTexture);
-            Gui.drawScaledCustomSizeModalRect(2, 2, 8.0F, 8.0F, 8, 8, 23, 23, 64.0F, 64.0F);
-            Gui.drawScaledCustomSizeModalRect(2, 2, 40.0F, 8.0F, 8, 8, 23, 23, 64.0F, 64.0F);
-            GlStateManager.color(1.0F, 1.0F, 1.0F);
-        }
-        GlStateManager.disableBlend();
-        GlStateManager.enableDepth();
-        GlStateManager.popMatrix();
-    }
-
-    private void renderFlux(Render2DEvent event) {
-        if (!(target instanceof EntityPlayer)) return;
-        EntityPlayer player = (EntityPlayer) target;
-
-        ScaledResolution sr = new ScaledResolution(mc);
-        float width = Math.max(75.0f, mc.fontRendererObj.getStringWidth(player.getName()) + 30.0f);
-        float[] pos = getPosition(sr, 28.0F + width, 28.0F);
-
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(pos[0], pos[1], 0.0F);
-        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
-
-        RenderUtil.drawRect(0.0, 0.0, 28.0 + width, 28.0, new Color(0, 0, 0, 150).getRGB());
-
-        mc.fontRendererObj.drawStringWithShadow(player.getName(), 30.0F, 3.0F, -1);
-        String healthStr = (double)Math.round(player.getHealth() * 10.0f) / 10.0 + " hp";
-        mc.fontRendererObj.drawStringWithShadow(healthStr, 26.0F + width - mc.fontRendererObj.getStringWidth(healthStr) - 2.0F, 4.0F, -1);
-
-        float health = player.getHealth();
-        float maxHealth = player.getMaxHealth();
-        float healthPercent = MathHelper.clamp_float(health / maxHealth, 0.0f, 1.0f);
-        int hue = (int)(healthPercent * 120.0f);
-        Color color = Color.getHSBColor((float)hue / 360.0f, 0.7f, 1.0f);
-
-        RenderUtil.drawRect(37.0, 14.5, 26.0 + width - 2.0, 17.5, new Color(0, 0, 0, 90).getRGB());
-        float barWidth = 26.0f + width - 2.0f - 37.0f;
-        float drawPercent = 37.0f + barWidth * healthPercent;
-
-        if (this.animation <= 0.0f) this.animation = drawPercent;
-        this.animation = RenderUtil.lerpFloat(drawPercent, this.animation, 0.1F);
-
-        RenderUtil.drawRect(37.0, 14.5, this.animation, 17.5, color.darker().getRGB());
-        RenderUtil.drawRect(37.0, 14.5, drawPercent, 17.5, color.getRGB());
-
-        mc.fontRendererObj.drawStringWithShadow("s", 30.0F, 13.0F, -1);
-        mc.fontRendererObj.drawStringWithShadow("r", 30.0F, 20.0F, -1);
-
-        float armorPercent = (float)player.getTotalArmorValue() / 20.0F;
-        float f3 = 37.0f + barWidth * armorPercent;
-        RenderUtil.drawRect(37.0, 21.5, 26.0 + width - 2.0, 24.5, new Color(0, 0, 0, 90).getRGB());
-        RenderUtil.drawRect(37.0, 21.5, f3, 24.5, new Color(66, 135, 245).getRGB());
-
-        renderFace(player);
-
-        GlStateManager.popMatrix();
-    }
-
-    private void renderNovoline(Render2DEvent event) {
-        if (!(target instanceof EntityPlayer)) return;
-        EntityPlayer player = (EntityPlayer) target;
-
-        ScaledResolution sr = new ScaledResolution(mc);
-
-        float rectLength = 35 + mc.fontRendererObj.getStringWidth(player.getName()) + 40;
-        float[] pos = getPosition(sr, rectLength, 37.5F);
-
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(pos[0], pos[1], 0.0F);
-        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
-
-        RenderUtil.drawRect(0.0, 0.0, rectLength, 36.0, new Color(40, 40, 40, 200).getRGB());
-
-        if (mc.getNetHandler() != null && player.getName() != null) {
-            NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(player.getName());
-            if (info != null) {
-                GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-                mc.getTextureManager().bindTexture(info.getLocationSkin());
-                Gui.drawScaledCustomSizeModalRect(2, 2, 8.0F, 8.0F, 8, 8, 32, 32, 64.0F, 64.0F);
-            }
-        }
-
-        mc.fontRendererObj.drawStringWithShadow(player.getName(), 40.0F, 4.0F, -1);
-
-        float health = player.getHealth();
-        float maxHealth = player.getMaxHealth();
-        float percent = (health / maxHealth) * 100.0F;
-        float space = (rectLength - 50.0F) / 100.0F;
-
-        if ((double)percent < this.lastP) {
-            this.diffP = this.lastP - (double)percent;
-        }
-        this.lastP = percent;
-        if (this.diffP > 0.0) {
-            this.diffP += (0.0 - this.diffP) * 0.05;
-        }
-        this.diffP = MathHelper.clamp_double(this.diffP, 0.0, 100.0F - percent);
-
-        Color hudColor = this.color.getValue() == 1 ? new Color(getHUDColor()) : new Color(40, 150, 255);
-        RenderUtil.drawRect(40.0, 16.5, 40.0 + 100.0 * space, 27.3, new Color(0, 0, 0, 100).getRGB());
-        RenderUtil.drawRect(40.0, 16.5, 40.0 + percent * space, 27.3, hudColor.getRGB());
-        RenderUtil.drawRect(40.0 + percent * space, 16.5, 40.0 + percent * space + this.diffP * space, 27.3, hudColor.darker().getRGB());
-
-        String text = String.format("%.1f%%", percent);
-        mc.fontRendererObj.drawStringWithShadow(text, 40.0F + 50.0F * space - mc.fontRendererObj.getStringWidth(text) / 2.0F, 18.0F, -1);
-
-        GlStateManager.popMatrix();
-    }
-
-    private void renderExhibition(Render2DEvent event) {
-        ScaledResolution resolution = new ScaledResolution(mc);
-        double boxWidth = 40 + mc.fontRendererObj.getStringWidth(target.getName());
-        double renderWidth = Math.max(boxWidth, 120);
         
+        GL11.glPopAttrib(); // 恢复所有OpenGL属性
+    }
+
+    // =========================================================================
+    //                            MODE IMPLEMENTATIONS
+    // =========================================================================
+
+    private void renderAstolfo() {
+        float width = Math.max(130, (float) (FontManager.regular18.getStringWidth(target.getName()) + 60));
+        float height = 56;
+        float[] pos = getPosition(width, height);
+        float x = pos[0];
+        float y = pos[1];
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0);
+        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
+
+        GL11.glPushMatrix();
+        if (shadow.getValue()) ShadowUtil.drawShadow(0, 0, width, height, 6, 6, new Color(0,0,0,100).getRGB());
+        RenderUtil.drawRect(0, 0, width, height, new Color(0, 0, 0, 100).getRGB());
+        GL11.glPopMatrix();
+        drawEntityOnScreen(target);
+        FontManager.regular18.drawString(target.getName(), 50, 6, -1, true);
+
+        GlStateManager.pushMatrix();
+        GlStateManager.scale(1.5, 1.5, 1.5);
+        String hpText = String.format("%.1f", target.getHealth()) + " ❤";
+        FontManager.regular18.drawString(hpText, (50) / 1.5f, (22) / 1.5f, getColor().getRGB(), true);
+        GlStateManager.popMatrix();
+
+        float healthPct = healthAnim / target.getMaxHealth();
+        float barWidth = width - 54;
+        float barX = 48;
+        float barY = 42;
+        float barHeight = 7;
+
+        RenderUtil.drawRect(barX, barY, barX + barWidth, barY + barHeight, ColorUtil.darker(getColor(), 0.3f).getRGB());
+        if (healthPct > 0) {
+            RenderUtil.drawRect(barX, barY, barX + barWidth * healthPct, barY + barHeight, getColor().getRGB());
+        }
+
+        GlStateManager.popMatrix();
+    }
+
+    private void renderExhibition() {
+        ScaledResolution resolution = new ScaledResolution(mc);
+        double boxWidth = 40 + FontManager.tahomaBold16.getStringWidth(target.getName());
+        double renderWidth = Math.max(boxWidth, 120);
+
         float posX = this.offX.getValue().floatValue() / this.scale.getValue();
         switch (this.posX.getValue()) {
             case 1:
@@ -347,7 +179,7 @@ public class TargetHUD extends Module {
                 posX *= -1.0F;
                 posX += (float) resolution.getScaledWidth() / this.scale.getValue() - (float)renderWidth;
         }
-        
+
         float posY = this.offY.getValue().floatValue() / this.scale.getValue();
         switch (this.posY.getValue()) {
             case 1:
@@ -357,94 +189,81 @@ public class TargetHUD extends Module {
                 posY *= -1.0F;
                 posY += (float) resolution.getScaledHeight() / this.scale.getValue() - 40.0F;
         }
-        
+
         GlStateManager.pushMatrix();
         GlStateManager.translate(posX + (float)renderWidth / 2.0F, posY + 20.0F, 0);
         GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 0.0F);
         GlStateManager.translate(-(float)renderWidth / 2.0F, -20.0F, 0);
 
+        GL11.glPushMatrix();
+        if (shadow.getValue()) {
+            ShadowUtil.drawShadow(-2.5f, -2.5f, (float)renderWidth + 5.0f, 45.0f, 4, 4, new Color(0, 0, 0, 100).getRGB());
+        }
         drawExhibitionBorderedRect(-2.5F, -2.5F, (float)renderWidth + 2.5F, 40 + 2.5F, 0.5F, getExhibitionColor(60), getExhibitionColor(10));
         drawExhibitionBorderedRect(-1.5F, -1.5F, (float)renderWidth + 1.5F, 40 + 1.5F, 1.5F, getExhibitionColor(60), getExhibitionColor(40));
-        
         drawExhibitionBorderedRect(0, 0, (float)renderWidth, 40, 0.5F, getExhibitionColor(22), getExhibitionColor(60));
-        
         drawExhibitionBorderedRect(2, 2, 38, 38, 0.5F, getExhibitionColor(0, 0), getExhibitionColor(10));
         drawExhibitionBorderedRect(2.5F, 2.5F, 38 - 0.5F, 38 - 0.5F, 0.5F, getExhibitionColor(17), getExhibitionColor(48));
 
         GlStateManager.pushMatrix();
         int factor = resolution.getScaleFactor();
-        
-        GL11.glScissor((int) ((posX + 3) * factor), (int) ((resolution.getScaledHeight() - (posY + 37)) * factor), (int) ((37 - 3) * factor), (int) ((37 - 3) * factor));
+        float sx = (posX + 3) * this.scale.getValue();
+        float sy = (posY + 3) * this.scale.getValue();
+        float sw = 34 * this.scale.getValue();
+        float sh = 34 * this.scale.getValue();
+
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        
+        GL11.glScissor((int) (sx * factor), (int) (mc.displayHeight - (sy + sh) * factor), (int) (sw * factor), (int) (sh * factor));
         drawEntityOnScreen(target);
-        
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GlStateManager.popMatrix();
 
         GlStateManager.translate(2, 0, 0);
-        
         GlStateManager.pushMatrix();
-        GlStateManager.scale(0.8F, 0.8F, 0.8F);
-        mc.fontRendererObj.drawString(target.getName(), 46, 4, -1, this.shadow.getValue());
+        FontManager.tahomaBold16.drawString(target.getName(), 46, 4, -1, true);
         GlStateManager.popMatrix();
 
         float health = target.getHealth();
-        float absorption = target.getAbsorptionAmount();
-        float progress = health / (target.getMaxHealth() + absorption);
-        float realHealthProgress = (health / target.getMaxHealth());
-        
+        float maxHealth = target.getMaxHealth();
+        float progress = health / (maxHealth + target.getAbsorptionAmount());
+        float realHealthProgress = (health / maxHealth);
+
         Color customColor = health >= 0 ? blendColors(new float[]{0f, 0.5f, 1f}, new Color[]{Color.RED, Color.YELLOW, Color.GREEN}, realHealthProgress).brighter() : Color.RED;
-        double width = Math.min(mc.fontRendererObj.getStringWidth(target.getName()), 60);
-        
-        width = getIncremental(width, 10);
-        if (width < 60) {
-            width = 60;
-        }
+        double width = Math.min(FontManager.tahomaBold16.getStringWidth(target.getName()), 60);
+        width = getIncremental(width);
+        if (width < 60) width = 60;
+
         double healthLocation = width * progress;
 
-        drawExhibitionBorderedRect(37, 12, 39 + (float)width, 16, 0.5F, getExhibitionColor(0, 0), getExhibitionColor(0));
-        drawExhibitionRect(38 + (float)healthLocation + 0.5F, 12.5F, 38 + (float)width + 0.5F, 15.5F, getExhibitionColorOpacity(customColor.getRGB(), 35));
-        drawExhibitionRect(37.5F, 12.5F, 38 + (float)healthLocation + 0.5F, 15.5F, customColor.getRGB());
-
-        if (absorption > 0) {
-            double absorptionDifferent = width * (absorption / (target.getMaxHealth() + absorption));
-            drawExhibitionRect(38 + (float)healthLocation + 0.5F, 12.5F, 38 + (float)healthLocation + 0.5F + (float)absorptionDifferent, 15.5F, 0x80FFAA00);
-        }
+        drawExhibitionBorderedRect(37, 12, (float)(39 + width), 16, 0.5F, getExhibitionColor(0, 0), getExhibitionColor(0));
+        drawExhibitionRect((float)(38 + healthLocation + 0.5F), 12.5F, (float)(38 + width + 0.5F), 15.5F, getExhibitionColorOpacity(customColor.getRGB()));
+        drawExhibitionRect(37.5F, 12.5F, (float)(38 + healthLocation + 0.5F), 15.5F, customColor.getRGB());
 
         for (int i = 1; i < 10; i++) {
             double dThing = (width / 10) * i;
-            drawExhibitionRect(38 + (float)dThing, 12, 38 + (float)dThing + 0.5F, 16, getExhibitionColor(0));
+            drawExhibitionRect((float)(38 + dThing), 12, (float)(38 + dThing + 0.5F), 16, getExhibitionColor(0));
         }
-        
+
         String str = "HP: " + (int) health + " | Dist: " + (int) mc.thePlayer.getDistanceToEntity(target);
         GlStateManager.pushMatrix();
-        GlStateManager.scale(0.7F, 0.7F, 0.7F);
-        mc.fontRendererObj.drawString(str, 53, 26, -1, this.shadow.getValue());
+        FontManager.tahomaBold12.drawString(str, 53, 26, -1, true);
         GlStateManager.popMatrix();
 
         if (target instanceof EntityPlayer) {
             EntityPlayer targetPlayer = (EntityPlayer) target;
             GL11.glPushMatrix();
-            final List<ItemStack> items = new ArrayList<ItemStack>();
+            List<ItemStack> items = new ArrayList<>();
             int split = 20;
-            
+
             for (int index = 3; index >= 0; --index) {
-                final ItemStack armor = targetPlayer.inventory.armorInventory[index];
-                if (armor != null) {
-                    items.add(armor);
-                }
+                if (targetPlayer.inventory.armorInventory[index] != null) items.add(targetPlayer.inventory.armorInventory[index]);
             }
-            int yOffset = 23;
-            if (targetPlayer.getCurrentEquippedItem() != null) {
-                items.add(targetPlayer.getCurrentEquippedItem());
-            }
-            
+            if (targetPlayer.getCurrentEquippedItem() != null) items.add(targetPlayer.getCurrentEquippedItem());
+
             RenderHelper.enableGUIStandardItemLighting();
-            for (final ItemStack itemStack : items) {
-                if (mc.theWorld != null) {
-                    split += 16;
-                }
+            int yOffset = 23;
+            for (ItemStack itemStack : items) {
+                if (mc.theWorld != null) split += 16;
                 GlStateManager.pushMatrix();
                 GlStateManager.disableAlpha();
                 GlStateManager.clear(256);
@@ -453,24 +272,13 @@ public class TargetHUD extends Module {
                 mc.getRenderItem().renderItemOverlays(mc.fontRendererObj, itemStack, split, yOffset);
                 mc.getRenderItem().zLevel = 0.0f;
 
-                int renderY = yOffset;
                 if (itemStack.getItem() instanceof ItemSword) {
                     int sLevel = EnchantmentHelper.getEnchantmentLevel(Enchantment.sharpness.effectId, itemStack);
-                    int fLevel = EnchantmentHelper.getEnchantmentLevel(Enchantment.fireAspect.effectId, itemStack);
-                    if (sLevel > 0) {
-                        drawEnchantTag("S" + getSharpnessColor(sLevel) + sLevel, split, renderY);
-                        renderY += 4.5F;
-                    }
-                    if (fLevel > 0) {
-                        drawEnchantTag("F" + getFireAspectColor(fLevel) + fLevel, split, renderY);
-                        renderY += 4.5F;
+                    if (sLevel > 0) { drawEnchantTag("S" + sLevel, split, yOffset);
                     }
                 } else if ((itemStack.getItem() instanceof ItemArmor)) {
                     int pLevel = EnchantmentHelper.getEnchantmentLevel(Enchantment.protection.effectId, itemStack);
-                    if (pLevel > 0) {
-                        drawEnchantTag("P" + getProtectionColor(pLevel) + pLevel, split, renderY);
-                        renderY += 4.5F;
-                    }
+                    if (pLevel > 0) drawEnchantTag("P" + pLevel, split, yOffset);
                 }
 
                 GlStateManager.disableBlend();
@@ -481,43 +289,159 @@ public class TargetHUD extends Module {
             RenderHelper.disableStandardItemLighting();
             GL11.glPopMatrix();
         }
+        GL11.glPopMatrix();
+        GlStateManager.popMatrix();
+    }
+
+    private void renderMoon() {
+        float width = (float) (35 + FontManager.tenacity16.getStringWidth(target.getName()) + 33);
+        width = Math.max(width, 110);
+        float height = 40.5f;
+        float[] pos = getPosition(width, height);
+        float x = pos[0];
+        float y = pos[1];
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0);
+        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
+
+        float healthPercentage = healthAnim / target.getMaxHealth();
+        float space = (width - 48);
+
+        GL11.glPushMatrix();
+        if (shadow.getValue()) ShadowUtil.drawShadow(0, 0, width, height, 8, 5, new Color(0,0,0,100).getRGB());
+        RenderUtil.drawRoundedRect(0, 0, width, height, 8, false, new Color(20, 20, 20, 220));
+        GL11.glPopMatrix();
+        RenderUtil.drawRoundedRect(42, 26.5f, space, 8, 4, false, new Color(0, 0, 0, 150));
+
+        if (healthPercentage > 0) {
+            RenderUtil.scissor(x + 42, y + 26.5f, space * healthPercentage, 8.5f);
+            RenderUtil.drawRoundedRect(42, 26.5f, space, 8.5f, 4, false, getColor());
+            RenderUtil.releaseScissor();
+        }
+
+        drawFace(target, 2.5f, 2.5f, 35, 35, 8); // Uses new helper
+
+        String text = String.format("%.1f", target.getHealth());
+        FontManager.tenacity12.drawString(text + "HP", 40, 17, -1, true);
+        FontManager.tenacity16.drawString(target.getName(), 40, 6, -1, true);
 
         GlStateManager.popMatrix();
     }
 
-    private float[] getPosition(ScaledResolution sr, float width, float height) {
-        float posX = this.offX.getValue().floatValue() / this.scale.getValue();
-        float posY = this.offY.getValue().floatValue() / this.scale.getValue();
+    private void renderRise() {
+        float width = Math.max(160, (float) (FontManager.productSans18.getStringWidth(target.getName()) + 30));
+        float height = 40.5f;
+        float[] pos = getPosition(width, height);
+        float x = pos[0];
+        float y = pos[1];
 
-        switch (this.posX.getValue()) {
-            case 1: posX += (float) sr.getScaledWidth() / this.scale.getValue() / 2.0F - width / 2.0F; break;
-            case 2: posX *= -1.0F; posX += (float) sr.getScaledWidth() / this.scale.getValue() - width; break;
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0);
+        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
+
+        float healthPercentage = healthAnim / target.getMaxHealth();
+        float space = (width - 48);
+
+        GL11.glPushMatrix();
+        if (shadow.getValue()) ShadowUtil.drawShadow(0, 0, width, height, 8, 5, new Color(0,0,0,100).getRGB());
+        RenderUtil.drawRoundedRect(0, 0, width, height, 8, false, new Color(10, 10, 10, 200));
+        GL11.glPopMatrix();
+        RenderUtil.drawRoundedRect(42, 22f, space, 6, 3, false, new Color(0, 0, 0, 120));
+
+        if (healthPercentage > 0) {
+            RenderUtil.scissor(x + 42, y + 22f, space * healthPercentage, 6);
+            RenderUtil.drawRoundedRect(42, 22f, space, 6, 3, false, getColor());
+            RenderUtil.releaseScissor();
         }
 
-        switch (this.posY.getValue()) {
-            case 1: posY += (float) sr.getScaledHeight() / this.scale.getValue() / 2.0F - height / 2.0F; break;
-            case 2: posY *= -1.0F; posY += (float) sr.getScaledHeight() / this.scale.getValue() - height; break;
-        }
-        return new float[]{posX, posY};
+        drawFace(target, 4.0f, 3.3f, 33, 33, 6);
+
+        String text = String.format("%.1f", target.getHealth());
+        FontManager.productSans18.drawString(text + " ", 134, 9, getColor().getRGB(), true);
+        FontManager.productSans18.drawString(target.getName(), 42, 9, -1, true);
+
+        GlStateManager.popMatrix();
     }
 
-    private void renderFace(EntityPlayer player) {
-        if (mc.getNetHandler() != null && player.getName() != null) {
-            NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(player.getName());
-            if (info != null) {
-                GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-                mc.getTextureManager().bindTexture(info.getLocationSkin());
-                GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-                Gui.drawScaledCustomSizeModalRect(2, 2, 8, 8, 8, 8, 24, 24, 64.0F, 64.0F);
-                if (player.isWearing(EnumPlayerModelParts.HAT)) {
-                    Gui.drawScaledCustomSizeModalRect(2, 2, 8 + 32, 8, 8, 8, 24, 24, 64.0F, 64.0F);
-                }
-            }
-        }
+    private void renderNeverlose() {
+        float width = 125.0f;
+        float height = 32.5f;
+        float xoffset = 1;
+        float yoffset = -1;
+
+        float dynamicWidth = Math.max(width, (float) FontManager.tenacity16.getStringWidth(target.getName()) + 42);
+        float[] pos = getPosition(dynamicWidth, height);
+        float x = pos[0];
+        float y = pos[1];
+        float circleX = xoffset + dynamicWidth - 27.5f;
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0);
+        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
+
+        GL11.glPushMatrix();
+        if (shadow.getValue()) ShadowUtil.drawShadow(xoffset, yoffset, dynamicWidth, height, 4, 4, new Color(0,0,0,150).getRGB());
+        RenderUtil.drawRoundedRect(xoffset, yoffset, dynamicWidth, height, 4, false, new Color(10, 10, 16, 240));
+        GL11.glPopMatrix();
+
+        drawFace(target, xoffset + 3f, yoffset + 3f, 26, 26, 4);
+
+        drawCircle(circleX, new Color(0,0,0,100).getRGB());
+        drawArc(circleX, 360 * (healthAnim / target.getMaxHealth()), getColor().getRGB());
+
+        FontManager.tenacity16.drawString(target.getName(), xoffset + 34, yoffset + 8, -1, true);
+        FontManager.tenacity12.drawString("Distance: " + String.format("%.1f", target.getDistanceToEntity(mc.thePlayer)) + "m", xoffset + 34, yoffset + 20, getColor().getRGB(), true);
+
+        String text = String.format("%.0f", target.getHealth());
+        FontManager.tenacity12.drawString(text, circleX - (float)FontManager.tenacity12.getStringWidth(text)/2f, 16 - 3, -1, true);
+
+        GlStateManager.popMatrix();
     }
 
-    private double getIncremental(double value, double increment) {
-        return Math.ceil(value / increment) * increment;
+    private void renderTenacity() {
+        float width = Math.max((long) 120F, (float) (FontManager.tenacity20.getStringWidth(target.getName()) + 50));
+        float height = 44;
+        float[] pos = getPosition(width, height);
+        float x = pos[0];
+        float y = pos[1];
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0);
+        GlStateManager.scale(this.scale.getValue(), this.scale.getValue(), 1.0F);
+
+        GL11.glPushMatrix();
+        if (shadow.getValue()) ShadowUtil.drawShadow(0, 0, width, height, 6, 6, new Color(0,0,0,120).getRGB());
+        RenderUtil.drawRoundedRect(0, 0, width, height, 6, false, new Color(0, 0, 0, 180));
+        GL11.glPopMatrix();
+
+        drawFace(target, 4, 4, 34, 34, 6);
+
+        FontManager.tenacity20.drawString(target.getName(), 43, 10, -1, true);
+        FontManager.tenacity12.drawString("HP: " + String.format("%.1f", healthAnim), 43, 20, -1, true);
+
+        float barW = width - 52;
+        float pct = healthAnim / target.getMaxHealth();
+        RenderUtil.drawRoundedRect(44, 30, barW, 6, 3, false, new Color(0,0,0,150));
+
+        if (pct > 0) {
+            RenderUtil.scissor(x + 44, y + 30, barW * pct, 6);
+            RenderUtil.drawRoundedRect(44, 30, barW, 6, 3, false, getColor());
+            RenderUtil.releaseScissor();
+        }
+
+        GlStateManager.popMatrix();
+    }
+
+    // Helpers
+    private void drawFace(EntityLivingBase entity, float x, float y, float width, float height, float radius) {
+        if (entity instanceof EntityPlayer) {
+            NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(entity.getName());
+            ResourceLocation skin = (info != null) ? info.getLocationSkin() : new ResourceLocation("textures/entity/steve.png");
+
+            // 直接调用 RenderUtil 绘制，不需要这里手动检查 Stencil
+            RenderUtil.drawRoundedHead(skin, x, y, width, height, radius);
+        }
     }
 
     private void drawEntityOnScreen(EntityLivingBase ent) {
@@ -533,9 +457,9 @@ public class TargetHUD extends Module {
         GlStateManager.rotate(135.0F, 0.0F, 1.0F, 0.0F);
         RenderHelper.enableStandardItemLighting();
         GlStateManager.rotate(-135.0F, 0.0F, 1.0F, 0.0F);
-        GlStateManager.rotate(-((float) Math.atan((double) ((float) 17 / 40.0F))) * 20.0F, 1.0F, 0.0F, 0.0F);
+        GlStateManager.rotate(-((float) Math.atan((float) 17 / 40.0F)) * 20.0F, 1.0F, 0.0F, 0.0F);
         GlStateManager.translate(0.0F, 0.0F, 0.0F);
-        net.minecraft.client.renderer.entity.RenderManager renderManager = mc.getRenderManager();
+        RenderManager renderManager = mc.getRenderManager();
         renderManager.setPlayerViewY(180.0F);
         renderManager.setRenderShadow(false);
         renderManager.renderEntityWithPosYaw(ent, 0.0D, 0.0D, 0.0D, 0.0F, 1.0F);
@@ -548,6 +472,57 @@ public class TargetHUD extends Module {
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
     }
 
+    private double getIncremental(double value) {
+        return Math.ceil(value / 10.0) * 10.0;
+    }
+
+    // Exhibition Color Helpers
+    private int getExhibitionColor(int brightness) {
+        return getExhibitionColor(brightness, brightness, brightness, 255);
+    }
+
+    private int getExhibitionColor(int brightness, int alpha) {
+        return getExhibitionColor(brightness, brightness, brightness, alpha);
+    }
+
+    private int getExhibitionColor(int red, int green, int blue, int alpha) {
+        int color = 0;
+        color |= Math.max(0, Math.min(255, alpha)) << 24;
+        color |= Math.max(0, Math.min(255, red)) << 16;
+        color |= Math.max(0, Math.min(255, green)) << 8;
+        color |= Math.max(0, Math.min(255, blue));
+        return color;
+    }
+
+    private int getExhibitionColorOpacity(int color) {
+        int red = (color >> 16 & 0xFF);
+        int green = (color >> 8 & 0xFF);
+        int blue = (color & 0xFF);
+        return getExhibitionColor(red, green, blue, Math.min(255, 35));
+    }
+
+    private void drawExhibitionRect(float x1, float y1, float x2, float y2, int color) {
+        RenderUtil.enableRenderState();
+        RenderUtil.drawRect(x1, y1, x2, y2, color);
+        RenderUtil.disableRenderState();
+    }
+
+    private void drawExhibitionBorderedRect(float x1, float y1, float x2, float y2, float borderWidth, int fillColor, int borderColor) {
+        RenderUtil.enableRenderState();
+        RenderUtil.drawRect(x1, y1, x2, y2, borderColor);
+        RenderUtil.drawRect(x1 + borderWidth, y1 + borderWidth, x2 - borderWidth, y2 - borderWidth, fillColor);
+        RenderUtil.disableRenderState();
+    }
+
+    private void drawEnchantTag(String text, int x, float y) {
+        GlStateManager.pushMatrix();
+        GlStateManager.disableDepth();
+        GlStateManager.scale(0.5F, 0.5F, 0.5F);
+        mc.fontRendererObj.drawString(text, x * 2, (int)(y * 2), -1, true);
+        GlStateManager.enableDepth();
+        GlStateManager.popMatrix();
+    }
+
     private Color blendColors(float[] fractions, Color[] colors, float progress) {
         if (fractions.length == colors.length) {
             int[] indicies = getFractionIndicies(fractions, progress);
@@ -556,7 +531,7 @@ public class TargetHUD extends Module {
             float max = range[1] - range[0];
             float value = progress - range[0];
             float weight = value / max;
-            return blend(colorRange[0], colorRange[1], (double) (1.0F - weight));
+            return blend(colorRange[0], colorRange[1], 1.0F - weight);
         } else {
             return colors[0];
         }
@@ -584,101 +559,91 @@ public class TargetHUD extends Module {
         return new Color(rgb1[0] * r + rgb2[0] * ir, rgb1[1] * r + rgb2[1] * ir, rgb1[2] * r + rgb2[2] * ir);
     }
 
-    private void drawEnchantTag(String text, int x, float y) {
-        GlStateManager.pushMatrix();
-        GlStateManager.disableDepth();
-        GlStateManager.scale(0.5F, 0.5F, 0.5F);
-        mc.fontRendererObj.drawString(text, x * 2, y * 2, -1, true);
-        GlStateManager.enableDepth();
-        GlStateManager.popMatrix();
-    }
-
-    private String getProtectionColor(int level) {
-        switch (level) {
-            case 1: return "§a";
-            case 2: return "§9";
-            case 3: return "§e";
-            case 4: return "§c";
-            default: return "§f";
-        }
-    }
-
-    private String getSharpnessColor(int level) {
-        switch (level) {
-            case 1: return "§a";
-            case 2: return "§9";
-            case 3: return "§e";
-            case 4: return "§6";
-            case 5: return "§c";
-            default: return "§f";
-        }
-    }
-
-    private String getFireAspectColor(int level) {
-        switch (level) {
-            case 1: return "§6";
-            case 2: return "§c";
-            default: return "§f";
-        }
-    }
-
-    private int getExhibitionColor(int brightness) {
-        return getExhibitionColor(brightness, brightness, brightness, 255);
-    }
-
-    private int getExhibitionColor(int brightness, int alpha) {
-        return getExhibitionColor(brightness, brightness, brightness, alpha);
-    }
-
-    private int getExhibitionColor(int red, int green, int blue) {
-        return getExhibitionColor(red, green, blue, 255);
-    }
-
-    private int getExhibitionColor(int red, int green, int blue, int alpha) {
-        int color = 0;
-        color |= Math.max(0, Math.min(255, alpha)) << 24;
-        color |= Math.max(0, Math.min(255, red)) << 16;
-        color |= Math.max(0, Math.min(255, green)) << 8;
-        color |= Math.max(0, Math.min(255, blue));
-        return color;
-    }
-
-    private int getExhibitionColorOpacity(int color, int alpha) {
-        int red = (color >> 16 & 0xFF);
-        int green = (color >> 8 & 0xFF);
-        int blue = (color & 0xFF);
-        return getExhibitionColor(red, green, blue, Math.max(0, Math.min(255, alpha)));
-    }
-
-    private void drawExhibitionRect(float x1, float y1, float x2, float y2, int color) {
+    private void drawCircle(float x, int color) {
         RenderUtil.enableRenderState();
-        RenderUtil.drawRect(x1, y1, x2, y2, color);
+        RenderUtil.setColor(color);
+        GL11.glLineWidth((float) 3);
+        GL11.glBegin(GL11.GL_LINE_LOOP);
+        for (int i = 0; i <= 360; i++) {
+            double angle = Math.toRadians(i);
+            GL11.glVertex2d(x + Math.sin(angle) * (float) 12, (float) 16 + Math.cos(angle) * (float) 12);
+        }
+        GL11.glEnd();
         RenderUtil.disableRenderState();
     }
 
-    private void drawExhibitionBorderedRect(float x1, float y1, float x2, float y2, float borderWidth, int fillColor, int borderColor) {
+    private void drawArc(float x, float degrees, int color) {
         RenderUtil.enableRenderState();
-        RenderUtil.drawRect(x1, y1, x2, y2, borderColor);
-        RenderUtil.drawRect(x1 + borderWidth, y1 + borderWidth, x2 - borderWidth, y2 - borderWidth, fillColor);
+        RenderUtil.setColor(color);
+        GL11.glLineWidth((float) 3);
+        GL11.glBegin(GL11.GL_LINE_STRIP);
+        for (int i = 0; i <= degrees; i++) {
+            double angle = Math.toRadians(i);
+            GL11.glVertex2d(x + Math.sin(angle) * (float) 12, (float) 16 - Math.cos(angle) * (float) 12);
+        }
+        GL11.glEnd();
         RenderUtil.disableRenderState();
     }
 
-    private int getHUDColor() {
-        return ((HUD) Myau.moduleManager.modules.get(HUD.class)).getColor(System.currentTimeMillis()).getRGB();
+    private int astolfoColors() {
+        float speed = 3000f;
+        float hue = (float) (System.currentTimeMillis() % (int)speed) + 0;
+        while (hue > speed) {
+            hue -= speed;
+        }
+        hue /= speed;
+        if (hue > 0.5) {
+            hue = 0.5F - (hue - 0.5F);
+        }
+        hue += 0.5F;
+        return Color.HSBtoRGB(hue, 0.5F, 1F);
+    }
+
+    private Color getColor() {
+        switch (colorMode.getValue()) {
+            case 0: return new Color(0, 150, 255);
+            case 1: return new Color(255, 50, 50);
+            case 2: return ColorUtil.getHealthBlend(target.getHealth() / target.getMaxHealth());
+            case 3: return new Color(astolfoColors());
+        }
+        return Color.WHITE;
+    }
+
+    private EntityLivingBase resolveTarget() {
+        KillAura killAura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
+        if (killAura.isEnabled() && killAura.isAttackAllowed() && TeamUtil.isEntityLoaded(killAura.getTarget())) {
+            return killAura.getTarget();
+        } else if (!(Boolean) this.kaOnly.getValue() && !this.lastAttackTimer.hasTimeElapsed(1500L) && TeamUtil.isEntityLoaded(this.lastTarget)) {
+            return this.lastTarget;
+        } else {
+            return this.chatPreview.getValue() && mc.currentScreen instanceof GuiChat ? mc.thePlayer : null;
+        }
+    }
+
+    private float[] getPosition(float width, float height) {
+        ScaledResolution sr = new ScaledResolution(mc);
+        float posX = this.offX.getValue().floatValue() / this.scale.getValue();
+        float posY = this.offY.getValue().floatValue() / this.scale.getValue();
+
+        switch (this.posX.getValue()) {
+            case 1: posX += (float) sr.getScaledWidth() / this.scale.getValue() / 2.0F - width / 2.0F; break;
+            case 2: posX *= -1.0F; posX += (float) sr.getScaledWidth() / this.scale.getValue() - width; break;
+        }
+
+        switch (this.posY.getValue()) {
+            case 1: posY += (float) sr.getScaledHeight() / this.scale.getValue() / 2.0F - height / 2.0F; break;
+            case 2: posY *= -1.0F; posY += (float) sr.getScaledHeight() / this.scale.getValue() - height; break;
+        }
+        return new float[]{posX, posY};
     }
 
     @EventTarget
     public void onPacket(PacketEvent event) {
         if (event.getType() == EventType.SEND && event.getPacket() instanceof C02PacketUseEntity) {
             C02PacketUseEntity packet = (C02PacketUseEntity) event.getPacket();
-            if (packet.getAction() != Action.ATTACK) {
-                return;
-            }
+            if (packet.getAction() != Action.ATTACK) return;
             Entity entity = packet.getEntityFromWorld(mc.theWorld);
-            if (entity instanceof EntityLivingBase) {
-                if (entity instanceof EntityArmorStand) {
-                    return;
-                }
+            if (entity instanceof EntityLivingBase && !(entity instanceof EntityArmorStand)) {
                 this.lastAttackTimer.reset();
                 this.lastTarget = (EntityLivingBase) entity;
             }
@@ -690,6 +655,5 @@ public class TargetHUD extends Module {
         super.onDisabled();
         this.target = null;
         this.lastTarget = null;
-        this.headTexture = null;
     }
 }

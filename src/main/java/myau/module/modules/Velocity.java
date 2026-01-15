@@ -73,9 +73,7 @@ public class Velocity extends Module {
     private boolean jumpFlag = false;
 
     private long lastAttackTime = 0L;
-    private long blinkStartTime = 0L;
     private long reverseStartTime = 0L;
-    private long lastVelocityTime = 0L;
 
     // Prediction Mode State
     private final ArrayList<Vec3> motionHistory = new ArrayList<>();
@@ -101,11 +99,6 @@ public class Velocity extends Module {
     private boolean isInLiquidOrWeb() {
         if (mc.thePlayer == null) return false;
         return mc.thePlayer.isInWater() || mc.thePlayer.isInLava() || ((IAccessorEntity) mc.thePlayer).getIsInWeb();
-    }
-
-    private boolean canDelay() {
-        KillAura killAura = (KillAura) Myau.moduleManager.modules.get(KillAura.class);
-        return mc.thePlayer.onGround && (killAura == null || !killAura.isEnabled() || !killAura.shouldAutoBlock());
     }
 
     private boolean isInCombat() {
@@ -267,8 +260,8 @@ public class Velocity extends Module {
         );
     }
 
-    private Vec3 multiplyVec3(Vec3 vec, double multiplier) {
-        return new Vec3(vec.xCoord * multiplier, vec.yCoord * multiplier, vec.zCoord * multiplier);
+    private Vec3 multiplyVec3(Vec3 vec) {
+        return new Vec3(vec.xCoord * 0.8, vec.yCoord * 0.8, vec.zCoord * 0.8);
     }
 
     private Vec3 addVec3(Vec3 vec1, Vec3 vec2) {
@@ -294,7 +287,7 @@ public class Velocity extends Module {
             mc.thePlayer.motionY += velocityBuffer.yCoord * bufferFactor;
             mc.thePlayer.motionZ += velocityBuffer.zCoord * bufferFactor;
 
-            velocityBuffer = multiplyVec3(velocityBuffer, 0.8);
+            velocityBuffer = multiplyVec3(velocityBuffer);
             if (lengthVec3(velocityBuffer) < 0.01) {
                 velocityBuffer = new Vec3(0, 0, 0);
             }
@@ -306,11 +299,18 @@ public class Velocity extends Module {
             return false;
         }
 
-        delayChanceCounter = (delayChanceCounter + delayChance.getValue()) % 100;
+        // 更新计数器
+        delayChanceCounter += delayChance.getValue();
+
+        // Rise的逻辑：当计数器达到或超过100时触发
         if (delayChanceCounter < 100) {
             return false;
         }
 
+        // 触发后重置计数器
+        delayChanceCounter = delayChanceCounter % 100;
+
+        // 检查其他条件
         if (isInLiquidOrWeb()) {
             return false;
         }
@@ -319,11 +319,9 @@ public class Velocity extends Module {
             return false;
         }
 
-        if (System.currentTimeMillis() - lastAttackTime < 200) {
-            return false;
-        }
+        return System.currentTimeMillis() - lastAttackTime >= 200;
 
-        return true;
+        // 所有条件都满足
     }
 
     // --- Events ---
@@ -481,7 +479,6 @@ public class Velocity extends Module {
 
         if (modeIndex == 3) {
             addVelocityData(velocity);
-            lastVelocityTime = System.currentTimeMillis();
 
             if (prediction.getValue()) {
                 isPredicting = true;
@@ -497,7 +494,6 @@ public class Velocity extends Module {
                     this.reverseFlag = true;
                     this.reverseStartTime = System.currentTimeMillis();
 
-                    this.blinkStartTime = System.currentTimeMillis();
                     Myau.blinkManager.setBlinkState(true, BlinkModules.BLINK);
 
                     debug("[Prediction] Delaying velocity packet");
@@ -607,23 +603,6 @@ public class Velocity extends Module {
         }
     }
 
-    // 如果MoveEvent不存在，注释掉这个方法
-    /*
-    @EventTarget
-    public void onMove(MoveEvent event) {
-        if (!this.isEnabled() || this.mode.getValue() != 3 || !prediction.getValue()) {
-            return;
-        }
-
-        if (isPredicting && lengthVec3(predictedVelocity) > 0.1) {
-            double influence = predictionAccuracy * 0.3;
-            if (influence > 0.05) {
-                // 这里需要根据实际的MoveEvent结构来调整
-            }
-        }
-    }
-    */
-
     @EventTarget
     public void onLoadWorld(LoadWorldEvent event) {
         resetState();
@@ -638,7 +617,6 @@ public class Velocity extends Module {
         this.delayActive = false;
         this.reverseStartTime = 0L;
         this.jumpFlag = false;
-        this.lastVelocityTime = 0L;
 
         if (this.mode.getValue() == 3) {
             initPrediction();
@@ -649,7 +627,6 @@ public class Velocity extends Module {
     public void onEnabled() {
         resetState();
         this.lastAttackTime = 0L;
-        this.blinkStartTime = System.currentTimeMillis();
 
         if (this.mode.getValue() == 3) {
             initPrediction();

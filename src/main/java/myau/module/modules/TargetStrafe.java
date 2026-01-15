@@ -1,5 +1,6 @@
 package myau.module.modules;
 
+import lombok.Getter;
 import myau.Myau;
 import myau.event.EventTarget;
 import myau.event.types.EventType;
@@ -7,13 +8,11 @@ import myau.event.types.Priority;
 import myau.events.Render3DEvent;
 import myau.events.StrafeEvent;
 import myau.events.UpdateEvent;
-import myau.module.Category;
 import myau.module.Module;
-import myau.property.properties.BooleanProperty;
-import myau.property.properties.FloatProperty;
-import myau.property.properties.IntProperty;
-import myau.property.properties.ModeProperty;
 import myau.util.*;
+import myau.property.properties.*;
+import myau.property.properties.BooleanProperty;
+import myau.property.properties.ModeProperty;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
@@ -25,6 +24,7 @@ import java.util.ArrayList;
 public class TargetStrafe extends Module {
     private static final Minecraft mc = Minecraft.getMinecraft();
     private EntityLivingBase target = null;
+    @Getter
     private float targetYaw = Float.NaN;
     private int direction = 1;
     public final FloatProperty radius = new FloatProperty("radius", 1.0F, 0.0F, 6.0F);
@@ -93,11 +93,7 @@ public class TargetStrafe extends Module {
     }
 
     public TargetStrafe() {
-        super("TargetStrafe", "Strafes around the KillAura target.", Category.MOVEMENT, 0, false, false);
-    }
-
-    public float getTargetYaw() {
-        return this.targetYaw;
+        super("TargetStrafe", false);
     }
 
     @EventTarget(Priority.HIGHEST)
@@ -201,6 +197,7 @@ public class TargetStrafe extends Module {
         this.targetYaw = Float.NaN;
     }
 
+    @Getter
     public static class Vec2d {
         private final double x;
         private final double y;
@@ -210,12 +207,5 @@ public class TargetStrafe extends Module {
             this.y = y;
         }
 
-        public double getX() {
-            return this.x;
-        }
-
-        public double getY() {
-            return this.y;
-        }
     }
 }

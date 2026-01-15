@@ -11,7 +11,6 @@ import java.util.Map;
 import static myau.config.Config.mc;
 
 public class FontManager {
-    // 添加了 regular14, regular18 以适配 Notification
     public static FontRenderer
             regular12, regular14, regular16, regular18, regular22,
             icon20,
@@ -38,10 +37,8 @@ public class FontManager {
         if (scale != prevScale) {
             prevScale = scale;
 
-            // 释放旧字体资源，防止内存泄漏
             releaseAllFonts();
 
-            // Regular Fonts (Inter/Roboto style)
             regular12 = new FontRenderer(FontUtil.getResource(locationMap, "regular.ttf", 12));
             regular14 = new FontRenderer(FontUtil.getResource(locationMap, "regular.ttf", 14)); // 新增：用于 Notification 描述
             regular16 = new FontRenderer(FontUtil.getResource(locationMap, "regular.ttf", 16));
@@ -106,7 +103,6 @@ public class FontManager {
         }
     }
 
-    // 添加释放所有字体资源的方法
     public static void releaseAllFonts() {
         if (regular12 != null) { regular12.destroy(); regular12 = null; }
         if (regular14 != null) { regular14.destroy(); regular14 = null; }
@@ -157,11 +153,6 @@ public class FontManager {
         if (noti32 != null) { noti32.destroy(); noti32 = null; }
     }
 
-    public static void forceInitialize() {
-        prevScale = -1; // 重置 scale 强制重新加载
-        initializeFonts();
-    }
-
     public static float getStringWidth(FontRenderer font, String text) {
         return (float) font.getStringWidth(text);
     }
@@ -169,15 +160,6 @@ public class FontManager {
     public static float getHeight(FontRenderer font) {
         return (float) font.getHeight();
     }
-
-    public static int getMinecraftStringWidth(String text) {
-        return mc.fontRendererObj.getStringWidth(text);
-    }
-
-    public static float getMinecraftHeight() {
-        return (float) mc.fontRendererObj.FONT_HEIGHT;
-    }
-
     public static MinecraftFontRenderer getMinecraft() {
         return MinecraftFontRenderer.INSTANCE;
     }

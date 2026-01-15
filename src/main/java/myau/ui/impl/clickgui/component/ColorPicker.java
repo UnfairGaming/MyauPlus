@@ -24,8 +24,7 @@ public class ColorPicker extends Component {
         this.colorProperty = colorProperty;
         updateHSB();
     }
-    
-    // 添加获取属性的方法
+
     public ColorProperty getProperty() {
         return this.colorProperty;
     }

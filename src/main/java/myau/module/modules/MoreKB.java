@@ -3,6 +3,7 @@ package myau.module.modules;
 import myau.event.EventTarget;
 import myau.events.AttackEvent;
 import myau.events.TickEvent;
+import myau.module.Category;
 import myau.module.Module;
 import myau.property.properties.BooleanProperty;
 import myau.property.properties.ModeProperty;
@@ -22,9 +23,9 @@ public class MoreKB extends Module {
     private EntityLivingBase target;
 
     public MoreKB() {
-        super("MoreKB", false);
-        this.target = null;
+        super("MoreKB","Boost your kb.", Category.COMBAT,0,false,false);
     }
+
 
     @EventTarget
     public void onAttack(AttackEvent event) {

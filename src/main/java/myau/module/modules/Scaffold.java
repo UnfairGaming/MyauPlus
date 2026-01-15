@@ -72,8 +72,8 @@ public class Scaffold extends Module {
 
     // Legit Place Properties
     public final BooleanProperty legitPlace = new BooleanProperty("legit-place", false);
-    public final IntProperty minCPS = new IntProperty("min-cps", 8, 1, 20, () -> this.legitPlace.getValue());
-    public final IntProperty maxCPS = new IntProperty("max-cps", 12, 1, 20, () -> this.legitPlace.getValue());
+    public final IntProperty minCPS = new IntProperty("min-cps", 8, 1, 20, this.legitPlace::getValue);
+    public final IntProperty maxCPS = new IntProperty("max-cps", 12, 1, 20, this.legitPlace::getValue);
 
     public final PercentProperty groundMotion = new PercentProperty("ground-motion", 100);
     public final PercentProperty airMotion = new PercentProperty("air-motion", 100);
@@ -147,7 +147,7 @@ public class Scaffold extends Module {
 
     // 更新放置时间
     private void updatePlaceTime() {
-        if ((Boolean) this.legitPlace.getValue()) {
+        if (this.legitPlace.getValue()) {
             this.lastPlaceTime = System.currentTimeMillis();
             this.currentDelay = getNextPlaceDelay();
         }
@@ -611,11 +611,10 @@ public class Scaffold extends Module {
                                         event.setForward(0.0F);
                                         event.setStrafe(0.0F);
                                     }
-                                    return;
                                 } else {
                                     this.towerTick = 0;
-                                    return;
                                 }
+                                return;
                             case 2:
                                 this.towerTick = 3;
                                 mc.thePlayer.motionY = 0.75 - mc.thePlayer.posY % 1.0;
@@ -666,19 +665,17 @@ public class Scaffold extends Module {
                                             this.targetFacing = facing;
                                             mc.thePlayer.motionY = 0.42F;
                                         }
-                                        return;
                                     } else {
                                         this.towerTick = 2;
                                         this.towerDelay++;
                                         mc.thePlayer.motionY = 0.42F;
                                         MoveUtil.setSpeed(MoveUtil.getSpeed(), MoveUtil.getMoveYaw());
-                                        return;
                                     }
                                 } else {
                                     this.towerTick = 0;
                                     this.towerDelay = 0;
-                                    return;
                                 }
+                                return;
                             case 2:
                                 this.towerTick = 3;
                                 mc.thePlayer.motionY = mc.thePlayer.motionY - RandomUtil.nextDouble(0.00101, 0.00109);
@@ -841,17 +838,14 @@ public class Scaffold extends Module {
             this.lastReportedPitch = mc.thePlayer.rotationPitch;
 
             // 初始化legit place相关变量
-            this.lastPlaceTime = 0L;
-            this.currentDelay = 0;
-            this.targetCPS = 0;
         } else {
             this.lastSlot = -1;
             this.lastReportedYaw = 0.0F;
             this.lastReportedPitch = 0.0F;
-            this.lastPlaceTime = 0L;
-            this.currentDelay = 0;
-            this.targetCPS = 0;
         }
+        this.lastPlaceTime = 0L;
+        this.currentDelay = 0;
+        this.targetCPS = 0;
         this.blockCount = -1;
         this.rotationTick = 3;
         this.yaw = -180.0F;

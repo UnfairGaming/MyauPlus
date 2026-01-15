@@ -18,13 +18,13 @@ public class ShaderUtil {
     public ShaderUtil(String fragmentShaderPath) {
         int program = 0;
         try {
-            // 1. 创建并编译顶点着色器 (通常不需要变动后缀，但也加了防护)
+            // 1. 创建顶点着色器 (尝试读取文件，如果不存在则使用内置的默认顶点着色器)
             int vertexShaderID = createShader("myau/shader/vertex.vsh", GL20.GL_VERTEX_SHADER);
 
-            // 2. 创建并编译片元着色器 (这里会处理 .fsh -> .frag 的回退)
+            // 2. 创建片元着色器 (尝试读取文件，如果不存在则检查是否有内置代码)
             int fragmentShaderID = createShader(fragmentShaderPath, GL20.GL_FRAGMENT_SHADER);
 
-            // 如果任意一个 Shader ID 为 0，说明编译失败，停止后续操作
+            // 如果编译失败，停止
             if (vertexShaderID == 0 || fragmentShaderID == 0) {
                 this.programID = 0;
                 return;
@@ -39,12 +39,11 @@ public class ShaderUtil {
             // 4. 检查链接状态
             int status = GL20.glGetProgrami(program, GL20.GL_LINK_STATUS);
             if (status == 0) {
-                // 仅在链接真正失败时打印错误
                 System.err.println("Shader Link Failed: " + GL20.glGetProgramInfoLog(program, 1024));
                 program = 0;
             }
 
-            // 5. 删除中间对象 (即使 Program 失败也应该删除 Shader 对象)
+            // 5. 清理 Shader 对象 (Link 后即可删除)
             GL20.glDeleteShader(vertexShaderID);
             GL20.glDeleteShader(fragmentShaderID);
 
@@ -59,27 +58,29 @@ public class ShaderUtil {
     private int createShader(String shaderPath, int shaderType) {
         int shaderID = 0;
         try {
-            // --- 核心修改：尝试读取源码，支持后缀自动替换 ---
+            // 获取源码 (文件 -> 后缀替换 -> 内置回退)
             String shaderSource = getShaderSource(shaderPath);
 
             if (shaderSource == null) {
-                // 如果是片元着色器，尝试替换后缀
+                // 后缀回退逻辑
                 if (shaderPath.endsWith(".fsh")) {
-                    String altPath = shaderPath.replace(".fsh", ".frag");
-                    // System.out.println("Switching from .fsh to .frag: " + altPath); // 调试用
-                    shaderSource = getShaderSource(altPath);
+                    shaderSource = getShaderSource(shaderPath.replace(".fsh", ".frag"));
                 } else if (shaderPath.endsWith(".frag")) {
-                    String altPath = shaderPath.replace(".frag", ".fsh");
-                    shaderSource = getShaderSource(altPath);
+                    shaderSource = getShaderSource(shaderPath.replace(".frag", ".fsh"));
                 }
             }
 
-            // 如果还是 null，说明文件彻底找不到
+            // 最后检查内置代码逻辑 (防止资源文件丢失导致崩溃)
             if (shaderSource == null) {
-                System.err.println("Shader file not found (checked .fsh and .frag): " + shaderPath);
-                return 0;
+                if (shaderPath.contains("vertex")) {
+                    shaderSource = DEFAULT_VERTEX_SHADER;
+                } else if (shaderPath.contains("roundedRect")) {
+                    shaderSource = ROUNDED_RECT_SHADER;
+                } else {
+                    System.err.println("Shader file not found: " + shaderPath);
+                    return 0;
+                }
             }
-            // ------------------------------------------------
 
             shaderID = GL20.glCreateShader(shaderType);
             GL20.glShaderSource(shaderID, shaderSource);
@@ -98,20 +99,14 @@ public class ShaderUtil {
         return shaderID;
     }
 
-    /**
-     * 尝试读取 Shader 文件内容。
-     * 如果文件不存在，返回 null，而不是抛出异常。
-     */
     private String getShaderSource(String path) {
         try {
             ResourceLocation loc = new ResourceLocation(path);
-            // 使用 try-with-resources 自动关闭流
             try (InputStream inputStream = Minecraft.getMinecraft().getResourceManager().getResource(loc).getInputStream()) {
                 return IOUtils.toString(inputStream, StandardCharsets.UTF_8);
             }
         } catch (IOException e) {
-            // 这里捕获异常但不打印，返回 null 触发 createShader 中的回退逻辑
-            return null;
+            return null; // 返回 null 以触发回退逻辑
         }
     }
 
@@ -137,11 +132,10 @@ public class ShaderUtil {
         return uniform;
     }
 
-    // 设置浮点数 Uniform (float)
     public void setUniformf(String name, float... args) {
         if (programID == 0) return;
         int uniform = getUniform(name);
-        if (uniform == -1) return; // 找不到变量就不设置，防止报错
+        if (uniform == -1) return;
 
         switch (args.length) {
             case 1: GL20.glUniform1f(uniform, args[0]); break;
@@ -151,7 +145,6 @@ public class ShaderUtil {
         }
     }
 
-    // 设置整数 Uniform (int)
     public void setUniformi(String name, int... args) {
         if (programID == 0) return;
         int uniform = getUniform(name);
@@ -168,4 +161,37 @@ public class ShaderUtil {
     public int getProgramID() {
         return this.programID;
     }
+
+    // =========================================================================
+    //                            INTERNAL SHADERS
+    // =========================================================================
+
+    // 默认顶点着色器 (处理坐标和纹理映射)
+    private static final String DEFAULT_VERTEX_SHADER =
+            "#version 120\n" +
+                    "\n" +
+                    "void main() {\n" +
+                    "    gl_TexCoord[0] = gl_MultiTexCoord0;\n" +
+                    "    gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\n" +
+                    "}";
+
+    // 圆角矩形片元着色器 (RenderUtil.drawRound 使用)
+    private static final String ROUNDED_RECT_SHADER =
+            "#version 120\n" +
+                    "\n" +
+                    "uniform vec2 location, rectSize;\n" +
+                    "uniform vec4 color;\n" +
+                    "uniform float radius;\n" +
+                    "uniform bool blur;\n" +
+                    "\n" +
+                    "float roundSDF(vec2 p, vec2 b, float r) {\n" +
+                    "    return length(max(abs(p) - b, 0.0)) - r;\n" +
+                    "}\n" +
+                    "\n" +
+                    "void main() {\n" +
+                    "    vec2 rectHalf = rectSize * .5;\n" +
+                    "    // Smooth the result (free antialiasing).\n" +
+                    "    float smoothedAlpha =  (1.0-smoothstep(0.0, 1.0, roundSDF(rectHalf - (gl_TexCoord[0].st * rectSize), rectHalf - radius - 1., radius))) * color.a;\n" +
+                    "    gl_FragColor = vec4(color.rgb, smoothedAlpha);\n" +
+                    "}";
 }
